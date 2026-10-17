@@ -171,6 +171,8 @@ spec:
                 ttlSeconds: {type: integer, minimum: 30, maximum: 86400}
                 generation: {type: integer, format: int64, minimum: 1}
                 policyRef: {type: string}
+                catalogServiceRef: {type: string, pattern: '^[a-z0-9][a-z0-9._/-]{2,127}$'}
+                assetRefs: {type: array, uniqueItems: true, items: {type: string, minLength: 1}}
                 revoked: {type: boolean, default: false}
               x-kubernetes-validations:
                 - {rule: '!has(self.localServiceRef) || !has(self.localServiceRef.namespace)', message: Cross-namespace service references are forbidden; omit namespace for the local namespace}
@@ -180,6 +182,48 @@ spec:
                 state: {type: string, enum: [Pending, Active, Expired, Denied, Revoked]}
                 expiresAt: {type: string, format: date-time}
                 reason: {type: string}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata: {name: externalassets.peering.re8ch.com}
+spec:
+  group: peering.re8ch.com
+  scope: Namespaced
+  names: {plural: externalassets, singular: externalasset, kind: ExternalAsset, shortNames: [acasset]}
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources: {status: {}}
+      additionalPrinterColumns:
+        - {name: Owner, type: string, jsonPath: .spec.ownerTenantRef}
+        - {name: Kind, type: string, jsonPath: .spec.kind}
+        - {name: State, type: string, jsonPath: .status.state}
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: [ownerTenantRef, kind, publicKeyFingerprint, locationRef, capabilities]
+              properties:
+                ownerTenantRef: {type: string, pattern: '^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$'}
+                kind: {type: string, enum: [ssh-device]}
+                publicKeyFingerprint: {type: string, pattern: '^SHA256:[A-Za-z0-9+/]{20,100}$'}
+                locationRef: {type: string, minLength: 1, maxLength: 253}
+                capabilities: {type: array, uniqueItems: true, items: {type: string, minLength: 1, maxLength: 120}}
+                labels: {type: object, additionalProperties: {type: string, maxLength: 120}}
+                catalogServiceRefs:
+                  type: array
+                  uniqueItems: true
+                  items: {type: string, pattern: '^[a-z0-9][a-z0-9._/-]{2,127}$'}
+              additionalProperties: false
+            status:
+              type: object
+              properties:
+                state: {type: string, enum: [Declared, Verified, Offline, Suspended]}
+                lastVerifiedAt: {type: string, format: date-time}
+                reason: {type: string, maxLength: 500}
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
