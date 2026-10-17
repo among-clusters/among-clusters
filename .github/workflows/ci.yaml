@@ -27,7 +27,7 @@ jobs:
           helm lint charts/among-clusters --set agent.enabled=true --set among-clusters-agent.clusterID=test --set among-clusters-agent.tenant=test --set among-clusters-agent.trustDomain=test.example --set among-clusters-agent.image.digest=$digest
       - name: Enforce sovereign API and least privilege
         run: |
-          test "$(grep -c '^kind: CustomResourceDefinition' charts/among-clusters-hub/crds/sovereign-peering.yaml)" = 7
+          test "$(grep -c '^kind: CustomResourceDefinition' charts/among-clusters-hub/crds/sovereign-peering.yaml)" = 8
           if grep -R 'cluster-admin' charts; then exit 1; fi
           if grep -R 'resources:.*secrets.*verbs:.*list' charts/among-clusters-agent; then exit 1; fi
           if grep -R 'RouteAdvertisement\|podCIDR\|remote.*kubeconfig' charts/among-clusters-hub/crds; then exit 1; fi
