@@ -1,0 +1,24 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: {interval: monthly}
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: gomod
+    directory: /
+    schedule: {interval: monthly}
+    labels: ["dependencies", "go"]
+  - package-ecosystem: npm
+    directory: /ui/headlamp-plugin
+    schedule: {interval: monthly}
+    labels: ["dependencies", "headlamp"]
+  - package-ecosystem: docker
+    directory: /
+    schedule: {interval: monthly}
+    labels: ["dependencies", "container"]
+  - package-ecosystem: helm
+    directory: /charts/among-clusters
+    schedule: {interval: monthly}
+    labels: ["dependencies", "helm"]
