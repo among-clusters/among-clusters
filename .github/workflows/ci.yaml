@@ -1,23 +1,33 @@
 name: ci
-on: [push, pull_request]
+on:
+  pull_request:
+  push:
+    branches: [main, codex/standalone-control-plane]
 permissions: {contents: read}
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {persist-credentials: false}
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with: {go-version: "1.24.x", cache: true}
+      - name: Validate release artifact inventory
+        run: python3 scripts/validate_artifacts.py
+      - name: Verify clean Go module graph
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
       - run: go test ./...
       - run: go vet ./...
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
       - name: Lint and render all charts
         run: |
           digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
           helm lint charts/among-clusters-hub --set image.digest=$digest
           helm template hub charts/among-clusters-hub --set image.digest=$digest >/tmp/hub.yaml
           helm template hub-managed charts/among-clusters-hub --namespace among-clusters --set image.digest=$digest --set managedAccess.enabled=true >/tmp/hub-managed.yaml
-          ! grep -q '^kind: Namespace$' /tmp/hub-managed.yaml
+          if grep -q '^kind: Namespace$' /tmp/hub-managed.yaml; then exit 1; fi
           grep -q 'type: PathPrefix, value: /}' /tmp/hub-managed.yaml
           helm lint charts/among-clusters-agent --set clusterID=test --set tenant=test --set trustDomain=test.example --set image.digest=$digest
           helm template agent charts/among-clusters-agent --set clusterID=test --set tenant=test --set trustDomain=test.example --set image.digest=$digest >/tmp/agent.yaml
@@ -39,10 +49,11 @@ jobs:
     runs-on: ubuntu-latest
     defaults: {run: {working-directory: ui/headlamp-plugin}}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {persist-credentials: false}
+      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4.2.0
         with: {version: 11.19.0}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with: {node-version: "22", cache: pnpm, cache-dependency-path: ui/headlamp-plugin/pnpm-lock.yaml}
       - run: pnpm install --frozen-lockfile
       - run: pnpm run tsc && pnpm run lint && pnpm run build

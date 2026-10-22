@@ -1,0 +1,97 @@
+{
+  "$schema": ".github/artifacts.schema.json",
+  "schemaVersion": "among-clusters.dev/artifacts/v1",
+  "project": {
+    "name": "among-clusters",
+    "repository": "https://github.com/among-clusters/among-clusters",
+    "license": "Apache-2.0"
+  },
+  "release": {
+    "provider": "github",
+    "page": "https://github.com/among-clusters/among-clusters/releases",
+    "tagPattern": "v{version}",
+    "versionSources": [
+      "charts/among-clusters/Chart.yaml:version",
+      "charts/among-clusters-hub/Chart.yaml:version",
+      "charts/among-clusters-agent/Chart.yaml:version",
+      "charts/among-clusters-headlamp/Chart.yaml:version"
+    ],
+    "workflow": ".github/workflows/release.yaml"
+  },
+  "artifacts": [
+    {
+      "id": "runtime-image",
+      "kind": "oci-image",
+      "package": "https://github.com/among-clusters/among-clusters/pkgs/container/among-clusters",
+      "reference": "ghcr.io/re8ch/among-clusters:v{version}",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "source": "Dockerfile",
+      "signed": "cosign-keyless"
+    },
+    {
+      "id": "hub-chart",
+      "kind": "helm-oci-chart",
+      "reference": "oci://ghcr.io/re8ch/charts/among-clusters-hub:{version}",
+      "platforms": ["kubernetes"],
+      "source": "charts/among-clusters-hub/Chart.yaml",
+      "signed": "cosign-keyless"
+    },
+    {
+      "id": "agent-chart",
+      "kind": "helm-oci-chart",
+      "reference": "oci://ghcr.io/re8ch/charts/among-clusters-agent:{version}",
+      "platforms": ["kubernetes"],
+      "source": "charts/among-clusters-agent/Chart.yaml",
+      "signed": "cosign-keyless"
+    },
+    {
+      "id": "headlamp-chart",
+      "kind": "helm-oci-chart",
+      "reference": "oci://ghcr.io/re8ch/charts/among-clusters-headlamp:{version}",
+      "platforms": ["kubernetes"],
+      "source": "charts/among-clusters-headlamp/Chart.yaml",
+      "signed": "cosign-keyless"
+    },
+    {
+      "id": "umbrella-chart",
+      "kind": "helm-oci-chart",
+      "reference": "oci://ghcr.io/re8ch/charts/among-clusters:{version}",
+      "platforms": ["kubernetes"],
+      "source": "charts/among-clusters/Chart.yaml",
+      "signed": "cosign-keyless"
+    },
+    {
+      "id": "github-release-assets",
+      "kind": "github-release-assets",
+      "reference": "https://github.com/among-clusters/among-clusters/releases/tag/v{version}",
+      "files": [
+        "among-clusters-{version}.tgz",
+        "among-clusters-{version}.tgz.sha256",
+        "among-clusters-{version}.tgz.bundle.json",
+        "among-clusters-agent-{version}.tgz",
+        "among-clusters-agent-{version}.tgz.sha256",
+        "among-clusters-agent-{version}.tgz.bundle.json",
+        "among-clusters-headlamp-{version}.tgz",
+        "among-clusters-headlamp-{version}.tgz.sha256",
+        "among-clusters-headlamp-{version}.tgz.bundle.json",
+        "among-clusters-hub-{version}.tgz",
+        "among-clusters-hub-{version}.tgz.sha256",
+        "among-clusters-hub-{version}.tgz.bundle.json",
+        "re8ch-headlamp-among-clusters-{version}.tar.gz",
+        "re8ch-headlamp-among-clusters-{version}.tar.gz.sha256",
+        "re8ch-headlamp-among-clusters-{version}.tar.gz.bundle.json"
+      ],
+      "source": ".github/workflows/release.yaml",
+      "signed": "cosign-keyless"
+    }
+  ],
+  "security": {
+    "policy": "SECURITY.md",
+    "privateReporting": "https://github.com/among-clusters/among-clusters/security/advisories/new",
+    "automation": [
+      ".github/dependabot.yml",
+      ".github/workflows/security.yaml",
+      ".github/workflows/scorecard.yaml"
+    ]
+  }
+}

@@ -2,6 +2,10 @@
 
 **Mesh clusters you don't control.**
 
+[中文说明](README.zh-CN.md) · [Dependency boundaries](docs/DEPENDENCIES.md) ·
+[Scenario matrix](docs/SCENARIO-MATRIX.md) · [Security](SECURITY.md) ·
+[Contributing](CONTRIBUTING.md) · [Release artifacts](artifacts.json)
+
 AmongClusters is a Sovereign Cluster Peering control plane for BYOC services.
 Each Kubernetes cluster remains an independent trust domain: it retains its API
 server, CA, RBAC, scheduler and lifecycle authority. The hosted Hub distributes
@@ -102,3 +106,16 @@ Artifact Hub metadata lives under `artifacthub/headlamp`.
 Release tags publish multi-architecture images with SBOM/provenance, all four
 OCI charts, signatures, Artifact Hub repository metadata, and the versioned
 Headlamp archive with its SHA-256 metadata.
+
+## Repository standard
+
+The repository is the independent source, build, test, and release authority
+for the component. Organization-specific GitOps repositories consume immutable
+released artifacts; they are not product source and do not define a hidden
+runtime dependency. `artifacts.json` is the machine-readable inventory of every
+official release surface and CI checks it against chart versions and workflows.
+
+Default configuration remains portable. Public DNS, Gateway listeners, NAT,
+BGP, cluster lifecycle, tenant identity, and remote Kubernetes administration
+stay with their respective owners. See the dependency map for the complete
+responsibility boundary.
