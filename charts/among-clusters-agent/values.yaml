@@ -14,6 +14,10 @@ invitation:
 peerConfirmations: []
 linkObservations: []
 gateway:
+  # Set false for catalog/status-only clusters. The Agent still publishes
+  # explicitly annotated Services, but no QUIC listener, route ConfigMap mount,
+  # or data-plane Service is installed.
+  enabled: true
   nodeSelector: {}
   # Optional provider metadata. The public chart deliberately defines no
   # provider address or topology; deployment owners supply those values.

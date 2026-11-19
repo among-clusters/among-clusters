@@ -28,6 +28,7 @@ spec:
     - to:
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
       ports: [{protocol: TCP, port: 443}, {protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+{{- if .Values.gateway.enabled }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -51,4 +52,5 @@ spec:
       ports: [{protocol: UDP, port: {{ .Values.gateway.listener.port }}}, {protocol: TCP, port: 443}, {protocol: TCP, port: 6443}]
     - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}}]
       ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}, {protocol: TCP, port: 443}]
+{{- end }}
 {{- end }}
