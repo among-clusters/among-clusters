@@ -58,6 +58,7 @@ spec:
         - name: peer-bundles
           secret: {secretName: "{{ .Values.gateway.peerBundleSecret }}"}
         {{- end }}
+{{- if .Values.gateway.enabled }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -130,3 +131,4 @@ spec:
     {{- range .Values.gateway.imports }}
     - {name: {{ .name }}, port: {{ .port }}, targetPort: {{ .name }}, protocol: TCP}
     {{- end }}
+{{- end }}

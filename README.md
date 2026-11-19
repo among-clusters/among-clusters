@@ -42,6 +42,12 @@ Services. The Gateway is a separate pod with no service-account token; its UDP
 listener is off until a public endpoint and a confirmed peer-bundle Secret are
 configured.
 
+For coordination-only edge clusters, set `gateway.enabled=false`. This installs
+only the signing Agent: it publishes explicitly annotated Service contracts and
+heartbeats over outbound HTTPS, while omitting the QUIC Gateway Deployment and
+Service. This mode never grants managed Kubernetes access and is the preferred
+bootstrap for GitOps-controlled traffic-distribution clusters.
+
 ## Explicit service and managed access flow
 
 A Service is exported only when it has `peering.re8ch.com/advertise=true` plus
