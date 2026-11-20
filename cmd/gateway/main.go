@@ -441,6 +441,10 @@ func proxyImport(ctx context.Context, client net.Conn, cert tls.Certificate, roo
 	stream, err := connection.OpenStreamSync(openCtx)
 	cancelOpen()
 	if err != nil {
+		// Removing a half-open session from the local registry is not enough:
+		// the dialing peer can still receive heartbeat acknowledgements and will
+		// therefore never reconnect. Close it so maintainSession redials.
+		connection.CloseWithError(1, "import stream unavailable")
 		registry.remove(route.ExpectedSPIFFEID, connection)
 		log.Printf("import %s stream: %v", route.ServiceIdentity, err)
 		return
