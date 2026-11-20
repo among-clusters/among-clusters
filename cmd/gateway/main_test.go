@@ -144,6 +144,9 @@ func TestSessionRegistryKeepsLongLivedSessionWhenProbeCloses(t *testing.T) {
 		t.Fatal("canonical SPIFFE identity did not resolve the registered session")
 	}
 	registry.put("spiffe://remote.test/cluster/remote", second)
+	if got := registry.get("spiffe://remote.test/cluster/remote"); got != second {
+		t.Fatalf("expected newest session, got %p want %p", got, second)
+	}
 	registry.remove("spiffe://remote.test/cluster/remote", second)
 	if got := registry.get("spiffe://remote.test/cluster/remote"); got != first {
 		t.Fatal("a closing probe removed the long-lived peer session")
