@@ -110,7 +110,14 @@ func (s *SovereignServer) acceptInvitation(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if err = s.Store.RegisterIdentity(r.Context(), input.Identity); err != nil {
-		http.Error(w, "identity conflict", 409)
+		// Consuming an invitation and creating its identity span two Kubernetes
+		// objects. Restore the one-shot invitation when the identity write fails
+		// so a transient API outage cannot permanently strand an agent.
+		if releaseErr := s.Store.ReleaseInvitation(r.Context(), inv); releaseErr != nil {
+			http.Error(w, "identity registration failed; invitation recovery failed", 503)
+			return
+		}
+		http.Error(w, "identity registration failed; retry invitation", 503)
 		return
 	}
 	writeJSON(w, 201, map[string]any{"clusterID": input.Identity.ClusterID, "tenant": inv.Tenant, "state": "PendingConfirmation"})

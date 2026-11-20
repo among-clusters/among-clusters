@@ -68,3 +68,22 @@ func TestCapabilityRejectionDoesNotConsumeInvitation(t *testing.T) {
 		t.Fatalf("valid retry was consumed by rejected attempt: %v", err)
 	}
 }
+
+func TestReleasedInvitationCanBeRetried(t *testing.T) {
+	store := NewMemorySovereignStore()
+	now := time.Now().UTC()
+	invitation := model.Invitation{ID: "retry", Tenant: "tenant-a", TokenHash: "hash", ExpiresAt: now.Add(time.Minute)}
+	if err := store.CreateInvitation(context.Background(), invitation); err != nil {
+		t.Fatal(err)
+	}
+	consumed, err := store.ConsumeInvitation(context.Background(), "retry", "hash", "tenant-a", nil, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.ReleaseInvitation(context.Background(), consumed); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.ConsumeInvitation(context.Background(), "retry", "hash", "tenant-a", nil, now); err != nil {
+		t.Fatalf("released invitation could not be retried: %v", err)
+	}
+}
