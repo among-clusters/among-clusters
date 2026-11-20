@@ -27,6 +27,7 @@ var identitiesGVR = schema.GroupVersionResource{Group: "peering.re8ch.com", Vers
 type SovereignStore interface {
 	CreateInvitation(context.Context, model.Invitation) error
 	ConsumeInvitation(context.Context, string, string, string, []string, time.Time) (model.Invitation, error)
+	ReleaseInvitation(context.Context, model.Invitation) error
 	RegisterIdentity(context.Context, model.IdentityRegistration) error
 	Identity(context.Context, string, string) (model.IdentityRegistration, error)
 	LastGeneration(context.Context, string, string) (uint64, error)
@@ -82,6 +83,18 @@ func (s *MemorySovereignStore) ConsumeInvitation(_ context.Context, id, hash, te
 	v.UsedAt = now
 	s.Invitations[id] = v
 	return v, nil
+}
+
+func (s *MemorySovereignStore) ReleaseInvitation(_ context.Context, v model.Invitation) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, ok := s.Invitations[v.ID]
+	if !ok || current.TokenHash != v.TokenHash || current.Tenant != v.Tenant {
+		return errors.New("invitation not found")
+	}
+	current.UsedAt = time.Time{}
+	s.Invitations[v.ID] = current
+	return nil
 }
 func (s *MemorySovereignStore) RegisterIdentity(_ context.Context, v model.IdentityRegistration) error {
 	s.mu.Lock()
@@ -187,6 +200,20 @@ func (s *KubernetesSovereignStore) ConsumeInvitation(ctx context.Context, id, ha
 	secret.Annotations["peering.re8ch.com/used-at"] = now.Format(time.RFC3339Nano)
 	_, err = s.Core.CoreV1().Secrets(tenant).Update(ctx, secret, metav1.UpdateOptions{})
 	return v, err
+}
+
+func (s *KubernetesSovereignStore) ReleaseInvitation(ctx context.Context, v model.Invitation) error {
+	name := "among-clusters-invite-" + v.ID
+	secret, err := s.Core.CoreV1().Secrets(v.Tenant).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if string(secret.Data["token-hash"]) != v.TokenHash {
+		return errors.New("invitation changed")
+	}
+	delete(secret.Annotations, "peering.re8ch.com/used-at")
+	_, err = s.Core.CoreV1().Secrets(v.Tenant).Update(ctx, secret, metav1.UpdateOptions{})
+	return err
 }
 
 func capabilitiesAllowed(invited, requested []string) bool {
