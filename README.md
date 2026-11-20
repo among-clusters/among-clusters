@@ -29,7 +29,7 @@ The API group is `peering.re8ch.com/v1alpha1`. Its namespace-scoped resources ar
 
 ## Charts
 
-Four OCI charts are released independently under `ghcr.io/re8ch/charts`:
+Four OCI charts are released independently under `ghcr.io/among-clusters/charts`:
 
 - `among-clusters`: umbrella chart with role switches.
 - `among-clusters-hub`: rendezvous API, controller, CRDs and audit control plane.
