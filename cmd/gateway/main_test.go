@@ -1,13 +1,29 @@
 package main
 
 import (
+	"context"
 	"encoding/binary"
 	"io"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/quic-go/quic-go"
 )
+
+func TestSessionRetryBackoffIsBounded(t *testing.T) {
+	if got := nextBackoff(3 * time.Second); got != 6*time.Second {
+		t.Fatalf("first retry backoff = %s", got)
+	}
+	if got := nextBackoff(time.Minute); got != time.Minute {
+		t.Fatalf("maximum retry backoff = %s", got)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if waitForRetry(ctx, time.Hour) {
+		t.Fatal("cancelled retry wait reported success")
+	}
+}
 
 func TestExportTunnelRoutesByServiceIdentity(t *testing.T) {
 	upstream, err := net.Listen("tcp", "127.0.0.1:0")
@@ -43,6 +59,59 @@ func TestExportTunnelRoutesByServiceIdentity(t *testing.T) {
 	}
 	if string(result) != "ping" {
 		t.Fatalf("got %q", result)
+	}
+}
+
+func TestExportTunnelPreservesResponseAfterClientHalfClose(t *testing.T) {
+	upstream, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer upstream.Close()
+	go func() {
+		connection, acceptErr := upstream.Accept()
+		if acceptErr != nil {
+			return
+		}
+		defer connection.Close()
+		request, _ := io.ReadAll(connection)
+		_, _ = connection.Write(append([]byte("reply:"), request...))
+	}()
+
+	tunnel, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tunnel.Close()
+	routes := map[string]exportRoute{"service": {ServiceIdentity: "service", Target: upstream.Addr().String(), TargetPeers: []string{"peer"}}}
+	identities := map[string][]string{"peer": {"spiffe://caller.test/cluster/caller"}}
+	go func() {
+		connection, acceptErr := tunnel.Accept()
+		if acceptErr == nil {
+			handleExport(connection, routes, identities, "spiffe://caller.test/cluster/caller")
+		}
+	}()
+
+	clientConnection, err := net.Dial("tcp", tunnel.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := clientConnection.(*net.TCPConn)
+	defer client.Close()
+	if err = binary.Write(client, binary.BigEndian, uint16(len("service"))); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = client.Write([]byte("service"))
+	_, _ = client.Write([]byte("payload"))
+	if err = client.CloseWrite(); err != nil {
+		t.Fatal(err)
+	}
+	response, err := io.ReadAll(client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(response) != "reply:payload" {
+		t.Fatalf("response after half-close = %q", response)
 	}
 }
 

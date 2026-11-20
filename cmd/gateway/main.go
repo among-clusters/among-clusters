@@ -250,20 +250,47 @@ func maintainConnectionHeartbeat(ctx context.Context, connection *quic.Conn) {
 }
 
 func maintainSession(ctx context.Context, cert tls.Certificate, roots *x509.CertPool, routes map[string]exportRoute, peerIdentities map[string][]string, registry *sessionRegistry, session peerSession) {
+	backoff := 3 * time.Second
 	for ctx.Err() == nil {
+		started := time.Now()
 		connection, err := quic.DialAddr(ctx, strings.TrimPrefix(session.Endpoint, "quic://"), tlsConfig(cert, roots, session.ExpectedSPIFFEID, false), &quic.Config{KeepAlivePeriod: 15 * time.Second, HandshakeIdleTimeout: 5 * time.Second})
 		if err != nil {
 			log.Printf("peer session %s: %v", session.ExpectedSPIFFEID, err)
-			select {
-			case <-ctx.Done():
+			if !waitForRetry(ctx, backoff) {
 				return
-			case <-time.After(3 * time.Second):
 			}
+			backoff = nextBackoff(backoff)
 			continue
 		}
 		handleConnection(ctx, connection, session.ExpectedSPIFFEID, routes, peerIdentities, registry)
 		connection.CloseWithError(0, "reconnecting")
+		if time.Since(started) >= 2*time.Minute {
+			backoff = 3 * time.Second
+		}
+		if !waitForRetry(ctx, backoff) {
+			return
+		}
+		backoff = nextBackoff(backoff)
 	}
+}
+
+func waitForRetry(ctx context.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
+func nextBackoff(current time.Duration) time.Duration {
+	current *= 2
+	if current > time.Minute {
+		return time.Minute
+	}
+	return current
 }
 
 type readWriteCloser interface {
@@ -319,6 +346,7 @@ func handleExport(stream readWriteCloser, routes map[string]exportRoute, peerIde
 		done <- struct{}{}
 	}()
 	go func() { io.Copy(stream, upstream); stream.Close(); done <- struct{}{} }()
+	<-done
 	<-done
 }
 func routeAllowsIdentity(route exportRoute, peerIdentities map[string][]string, identity string) bool {
@@ -405,7 +433,14 @@ func proxyImport(ctx context.Context, client net.Conn, cert tls.Certificate, roo
 	log.Printf("import %s opened authenticated stream to %s", route.ServiceIdentity, route.ExpectedSPIFFEID)
 	done := make(chan struct{}, 2)
 	go func() { io.Copy(stream, client); stream.Close(); done <- struct{}{} }()
-	go func() { io.Copy(client, stream); done <- struct{}{} }()
+	go func() {
+		io.Copy(client, stream)
+		if tcp, ok := client.(*net.TCPConn); ok {
+			tcp.CloseWrite()
+		}
+		done <- struct{}{}
+	}()
+	<-done
 	<-done
 }
 func env(name, fallback string) string {
