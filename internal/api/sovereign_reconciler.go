@@ -25,10 +25,15 @@ type SovereignReconciler struct {
 	Core                 kubernetes.Interface
 	Now                  func() time.Time
 	ManagedAccessEnabled bool
+	Interval             time.Duration
 }
 
 func (r *SovereignReconciler) Run(ctx context.Context) {
-	ticker := time.NewTicker(15 * time.Second)
+	interval := r.Interval
+	if interval < 15*time.Second {
+		interval = 60 * time.Second
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		r.Once(ctx)

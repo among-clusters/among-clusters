@@ -6,6 +6,7 @@
     "tenant":{"type":"string","pattern":"^[a-z0-9][a-z0-9-]*$"},
     "trustDomain":{"type":"string","pattern":"^[a-z0-9.-]+$"},
     "hubEndpoint":{"type":"string","pattern":"^https://"},
+    "syncInterval":{"type":"string","pattern":"^([1-9][0-9]*)(s|m|h)$"},
     "nodeSelector":{"type":"object","additionalProperties":{"type":"string"}},
     "image":{"type":"object","required":["repository","digest"],"properties":{"repository":{"type":"string"},"digest":{"type":"string","pattern":"^sha256:[a-f0-9]{64}$"}}},
     "invitation":{"type":"object","required":["existingSecret","idKey","tokenKey"],"properties":{"existingSecret":{"type":"string"},"idKey":{"type":"string"},"tokenKey":{"type":"string"}}},

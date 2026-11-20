@@ -76,7 +76,7 @@ func main() {
 			log.Printf("registration: %v", err)
 		}
 	}
-	ticker := time.NewTicker(15 * time.Second)
+	ticker := time.NewTicker(envDuration("SYNC_INTERVAL", 60*time.Second))
 	defer ticker.Stop()
 	for {
 		if err = a.refreshTLSMaterial(ctx); err != nil {
@@ -120,6 +120,14 @@ func must(name string) string {
 func env(name, fallback string) string {
 	if v := os.Getenv(name); v != "" {
 		return v
+	}
+	return fallback
+}
+func envDuration(name string, fallback time.Duration) time.Duration {
+	if value := os.Getenv(name); value != "" {
+		if parsed, err := time.ParseDuration(value); err == nil && parsed >= 15*time.Second {
+			return parsed
+		}
 	}
 	return fallback
 }
