@@ -50,7 +50,10 @@ func canonicalIdentity(identity string) string { return strings.TrimSuffix(ident
 func (r *sessionRegistry) put(identity string, connection *quic.Conn) {
 	r.mu.Lock()
 	key := canonicalIdentity(identity)
-	r.sessions[key] = append(r.sessions[key], connection)
+	// Prefer the freshest authenticated session. A half-open QUIC connection can
+	// remain blocked in AcceptStream after the peer has already reconnected; if
+	// it stays first, every import is sent to that stale connection forever.
+	r.sessions[key] = append([]*quic.Conn{connection}, r.sessions[key]...)
 	r.mu.Unlock()
 }
 func (r *sessionRegistry) get(identity string) *quic.Conn {
@@ -416,8 +419,11 @@ func proxyImport(ctx context.Context, client net.Conn, cert tls.Certificate, roo
 	if owned {
 		defer connection.CloseWithError(0, "closed")
 	}
-	stream, err := connection.OpenStreamSync(ctx)
+	openCtx, cancelOpen := context.WithTimeout(ctx, 5*time.Second)
+	stream, err := connection.OpenStreamSync(openCtx)
+	cancelOpen()
 	if err != nil {
+		registry.remove(route.ExpectedSPIFFEID, connection)
 		log.Printf("import %s stream: %v", route.ServiceIdentity, err)
 		return
 	}
