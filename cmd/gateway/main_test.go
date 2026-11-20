@@ -25,6 +25,31 @@ func TestSessionRetryBackoffIsBounded(t *testing.T) {
 	}
 }
 
+func TestSessionRegistryWaitsForReconnect(t *testing.T) {
+	registry := newSessionRegistry()
+	connection := new(quic.Conn)
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		registry.put("spiffe://remote.test/cluster/remote", connection)
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if got := registry.wait(ctx, "spiffe://remote.test/cluster/remote/", time.Second); got != connection {
+		t.Fatal("reconnected peer session was not returned")
+	}
+}
+
+func TestSessionRegistryWaitIsBounded(t *testing.T) {
+	registry := newSessionRegistry()
+	started := time.Now()
+	if got := registry.wait(context.Background(), "spiffe://missing.test/cluster/remote", 20*time.Millisecond); got != nil {
+		t.Fatal("missing peer session was returned")
+	}
+	if elapsed := time.Since(started); elapsed > 200*time.Millisecond {
+		t.Fatalf("missing peer wait took %s", elapsed)
+	}
+}
+
 func TestExportTunnelRoutesByServiceIdentity(t *testing.T) {
 	upstream, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

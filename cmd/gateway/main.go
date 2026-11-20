@@ -65,6 +65,24 @@ func (r *sessionRegistry) get(identity string) *quic.Conn {
 	}
 	return nil
 }
+func (r *sessionRegistry) wait(ctx context.Context, identity string, timeout time.Duration) *quic.Conn {
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if connection := r.get(identity); connection != nil {
+			return connection
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-deadline.C:
+			return nil
+		case <-ticker.C:
+		}
+	}
+}
 func (r *sessionRegistry) remove(identity string, connection *quic.Conn) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -397,7 +415,7 @@ func serveImport(ctx context.Context, cert tls.Certificate, roots *x509.CertPool
 }
 func proxyImport(ctx context.Context, client net.Conn, cert tls.Certificate, roots *x509.CertPool, registry *sessionRegistry, route importRoute) {
 	defer client.Close()
-	connection := registry.get(route.ExpectedSPIFFEID)
+	connection := registry.wait(ctx, route.ExpectedSPIFFEID, 15*time.Second)
 	owned := false
 	if connection == nil {
 		if route.SessionOnly {
