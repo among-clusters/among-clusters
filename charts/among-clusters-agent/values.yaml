@@ -2,6 +2,7 @@ clusterID: ""
 tenant: ""
 trustDomain: ""
 hubEndpoint: https://among-clusters.re8ch.com
+syncInterval: 60s
 image:
   repository: ghcr.io/re8ch/among-clusters
   digest: ""

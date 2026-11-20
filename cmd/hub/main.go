@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/re8ch/among-clusters/internal/api"
 	"k8s.io/client-go/dynamic"
@@ -30,7 +31,13 @@ func main() {
 		log.Fatal(err)
 	}
 	server := &api.SovereignServer{Store: &api.KubernetesSovereignStore{Dynamic: client, Core: core}, AdminToken: os.Getenv("ADMIN_TOKEN")}
-	go (&api.SovereignReconciler{Client: client, Core: core, ManagedAccessEnabled: api.ManagedAccessFromEnv()}).Run(context.Background())
+	interval := 60 * time.Second
+	if value := os.Getenv("RECONCILE_INTERVAL"); value != "" {
+		if parsed, parseErr := time.ParseDuration(value); parseErr == nil && parsed >= 15*time.Second {
+			interval = parsed
+		}
+	}
+	go (&api.SovereignReconciler{Client: client, Core: core, ManagedAccessEnabled: api.ManagedAccessFromEnv(), Interval: interval}).Run(context.Background())
 	log.Printf("AmongClusters hub listening on %s", address)
 	log.Fatal(http.ListenAndServe(address, server.Handler()))
 }

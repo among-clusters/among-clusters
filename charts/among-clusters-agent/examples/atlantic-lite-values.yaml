@@ -2,6 +2,7 @@ clusterID: re8ch-atlantic
 tenant: re8ch-admin
 trustDomain: atlantic.re8ch.com
 hubEndpoint: https://among-clusters.re8ch.com
+syncInterval: 5m
 image:
   repository: ghcr.io/re8ch/among-clusters
   digest: sha256:0000000000000000000000000000000000000000000000000000000000000000

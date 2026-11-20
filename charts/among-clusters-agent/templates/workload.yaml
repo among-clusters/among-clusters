@@ -25,6 +25,7 @@ spec:
             - {name: TENANT, value: "{{ .Values.tenant }}"}
             - {name: TRUST_DOMAIN, value: "{{ .Values.trustDomain }}"}
             - {name: HUB_ENDPOINT, value: "{{ .Values.hubEndpoint }}"}
+            - {name: SYNC_INTERVAL, value: {{ .Values.syncInterval | quote }}}
             - {name: IDENTITY_SECRET, value: "{{ .Values.identitySecret }}"}
             - name: POD_NAMESPACE
               valueFrom: {fieldRef: {fieldPath: metadata.namespace}}

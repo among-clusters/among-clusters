@@ -96,3 +96,14 @@ func TestLoadIdentityPreservesLegacySecretType(t *testing.T) {
 		}
 	}
 }
+
+func TestSyncIntervalIsBounded(t *testing.T) {
+	t.Setenv("SYNC_INTERVAL", "5m")
+	if got := envDuration("SYNC_INTERVAL", time.Minute); got != 5*time.Minute {
+		t.Fatalf("interval = %s", got)
+	}
+	t.Setenv("SYNC_INTERVAL", "1s")
+	if got := envDuration("SYNC_INTERVAL", time.Minute); got != time.Minute {
+		t.Fatalf("unsafe interval = %s", got)
+	}
+}
