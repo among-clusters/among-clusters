@@ -43,6 +43,18 @@ type sessionRegistry struct {
 
 const sessionHeartbeatIdentity = "among-clusters.internal/session-heartbeat"
 const sessionAcceptorMaintainsHeartbeat = false
+const sessionMaxConcurrentStreams int64 = 4096
+
+func sessionQUICConfig(dial bool) *quic.Config {
+	config := &quic.Config{
+		KeepAlivePeriod:    15 * time.Second,
+		MaxIncomingStreams: sessionMaxConcurrentStreams,
+	}
+	if dial {
+		config.HandshakeIdleTimeout = 5 * time.Second
+	}
+	return config
+}
 
 func newSessionRegistry() *sessionRegistry {
 	return &sessionRegistry{sessions: map[string][]*quic.Conn{}}
@@ -197,7 +209,7 @@ func currentCertificate(fallback tls.Certificate) (*tls.Certificate, error) {
 	return &certificate, nil
 }
 func serveQUIC(ctx context.Context, cert tls.Certificate, roots *x509.CertPool, routes map[string]exportRoute, peerIdentities map[string][]string, registry *sessionRegistry) {
-	listener, err := quic.ListenAddr(env("LISTEN_ADDRESS", ":8443"), tlsConfig(cert, roots, "", true), &quic.Config{KeepAlivePeriod: 15 * time.Second})
+	listener, err := quic.ListenAddr(env("LISTEN_ADDRESS", ":8443"), tlsConfig(cert, roots, "", true), sessionQUICConfig(false))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -280,7 +292,7 @@ func maintainSession(ctx context.Context, cert tls.Certificate, roots *x509.Cert
 	backoff := 3 * time.Second
 	for ctx.Err() == nil {
 		started := time.Now()
-		connection, err := quic.DialAddr(ctx, strings.TrimPrefix(session.Endpoint, "quic://"), tlsConfig(cert, roots, session.ExpectedSPIFFEID, false), &quic.Config{KeepAlivePeriod: 15 * time.Second, HandshakeIdleTimeout: 5 * time.Second})
+		connection, err := quic.DialAddr(ctx, strings.TrimPrefix(session.Endpoint, "quic://"), tlsConfig(cert, roots, session.ExpectedSPIFFEID, false), sessionQUICConfig(true))
 		if err != nil {
 			log.Printf("peer session %s: %v", session.ExpectedSPIFFEID, err)
 			if !waitForRetry(ctx, backoff) {
@@ -433,7 +445,7 @@ func proxyImport(ctx context.Context, client net.Conn, cert tls.Certificate, roo
 			return
 		}
 		var err error
-		connection, err = quic.DialAddr(ctx, strings.TrimPrefix(route.Endpoint, "quic://"), tlsConfig(cert, roots, route.ExpectedSPIFFEID, false), &quic.Config{HandshakeIdleTimeout: 5 * time.Second})
+		connection, err = quic.DialAddr(ctx, strings.TrimPrefix(route.Endpoint, "quic://"), tlsConfig(cert, roots, route.ExpectedSPIFFEID, false), sessionQUICConfig(true))
 		if err != nil {
 			log.Printf("import %s dial: %v", route.ServiceIdentity, err)
 			return

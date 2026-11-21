@@ -25,6 +25,24 @@ func TestSessionRetryBackoffIsBounded(t *testing.T) {
 	}
 }
 
+func TestSessionQUICConfigSupportsPublicEdgeFanout(t *testing.T) {
+	for _, dial := range []bool{false, true} {
+		config := sessionQUICConfig(dial)
+		if config.MaxIncomingStreams != sessionMaxConcurrentStreams {
+			t.Fatalf("dial=%t max incoming streams = %d", dial, config.MaxIncomingStreams)
+		}
+		if config.KeepAlivePeriod != 15*time.Second {
+			t.Fatalf("dial=%t keepalive = %s", dial, config.KeepAlivePeriod)
+		}
+	}
+	if sessionQUICConfig(true).HandshakeIdleTimeout != 5*time.Second {
+		t.Fatal("dialer handshake timeout is not bounded")
+	}
+	if sessionQUICConfig(false).HandshakeIdleTimeout != 0 {
+		t.Fatal("listener unexpectedly overrides the handshake timeout")
+	}
+}
+
 func TestSessionRegistryWaitsForReconnect(t *testing.T) {
 	registry := newSessionRegistry()
 	connection := new(quic.Conn)
