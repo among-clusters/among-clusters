@@ -160,6 +160,15 @@ func TestExportAcknowledgesSessionHeartbeat(t *testing.T) {
 	}
 }
 
+func TestOnlySessionDialerOwnsHeartbeat(t *testing.T) {
+	// An accepted connection shares its stream budget with ordinary imports and
+	// only acknowledges the dialer's heartbeat. Running a second heartbeat loop
+	// on the acceptor can tear down the entire peer session under fan-in load.
+	if sessionAcceptorMaintainsHeartbeat {
+		t.Fatal("session acceptor must not maintain a competing heartbeat")
+	}
+}
+
 func TestSessionRegistryKeepsLongLivedSessionWhenProbeCloses(t *testing.T) {
 	registry := newSessionRegistry()
 	first := new(quic.Conn)
