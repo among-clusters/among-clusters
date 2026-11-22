@@ -132,3 +132,34 @@ Each advertisement keeps one real Service identity and publisher owner while
 `publicIngress.endpoints` exposes up to 32 reviewed site endpoints. Stable unique
 IDs survive list reordering; consumers select an explicit endpoint ID. This is
 not permission for a publisher to claim another cluster's relay ownership.
+
+## Dynamic export leases and source withdrawal
+
+The agent renews dynamic gateway routes only after the hub accepts its signed
+service snapshot and returns its exact control generation, publication timestamp,
+and per-Service approved peer references. Wildcard requests become the hub's
+actual Ready peer subset; empty, missing or mismatched receipts fail closed. The
+agent writes only these approved references, never a requested wildcard. Route expiry is
+that timestamp plus the reviewed Service TTL, not a later local file-write time.
+A rejected/failed snapshot does not install or renew a route. An older hub without
+a publication receipt is not treated as acceptance for this lease protocol.
+Deploy the new hub before the new agent and verify fresh leases before acceptance.
+
+Each newly opened QUIC service stream checks the current dynamic route lease and
+target-peer authorization before connecting upstream. An expired or revoked dynamic
+identity cannot fall back to a same-named startup static export. The agent persists
+scoped tombstones for removed dynamic identities in the existing route ConfigMap;
+they survive process restarts and do not disable unrelated explicitly reviewed
+static routes. Republish an identity only through a newly accepted source snapshot.
+
+A transient route-file failure can retain only a still-valid accepted lease; it
+cannot extend expiry or silently downgrade a known leased identity to unlimited
+legacy routing. Do not delete tombstone history to roll back. Existing unleased
+legacy dynamic files are compatibility input, not evidence of lease enforcement;
+verify the new agent has written leaseRequired/expiresAt/acceptedGeneration.
+
+These checks govern **new streams**. Streams already copying data keep the current
+half-close/drain behavior; no established business stream is forcibly terminated,
+and no operation or stream payload is automatically replayed. Strong active-stream
+revocation would require a separately reviewed lifecycle policy. Unrelated peer
+session heartbeats continue when a service export is withdrawn.

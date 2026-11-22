@@ -328,23 +328,62 @@ func (a *agent) publishServices(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err = a.writeGatewayRoutes(ctx, services); err != nil {
+	expectedGeneration := a.sequence + 1
+	body, err := a.sendControlResponse(ctx, "service.snapshot", model.ServiceSnapshot{Services: services})
+	if err != nil {
 		return err
 	}
-	return a.sendControl(ctx, "service.snapshot", model.ServiceSnapshot{Services: services})
+	var receipt model.ServiceSnapshotReceipt
+	if json.Unmarshal(body, &receipt) != nil || receipt.Generation != expectedGeneration || receipt.PublishedAt.IsZero() || receipt.PublishedAt.After(time.Now().Add(2*time.Minute)) {
+		return errors.New("hub service snapshot did not return a valid publication receipt")
+	}
+	approvedPeers, err := approvedRoutePeers(a.trustDomain, services, receipt)
+	if err != nil {
+		return err
+	}
+	return a.writeGatewayRoutes(ctx, services, receipt.PublishedAt, receipt.Generation, approvedPeers)
 }
-func (a *agent) writeGatewayRoutes(ctx context.Context, services []model.AdvertisedService) error {
-	routes := []map[string]any{}
+func (a *agent) writeGatewayRoutes(ctx context.Context, services []model.AdvertisedService, publishedAt time.Time, acceptedGeneration uint64, approvedPeers map[string][]string) error {
+	if acceptedGeneration == 0 || publishedAt.IsZero() {
+		return errors.New("missing hub-accepted export generation/time")
+	}
+	routes := []model.ExportRoute{}
+	identities := map[string]bool{}
 	for _, service := range services {
 		target := service.GatewayTarget
 		if target == "" {
 			target = fmt.Sprintf("%s.%s.svc:%d", service.Name, service.Namespace, service.Port)
 		}
-		routes = append(routes, map[string]any{"serviceIdentity": fmt.Sprintf("spiffe://%s/ns/%s/service/%s", a.trustDomain, service.Namespace, service.Name), "target": target, "targetPeers": service.TargetPeers})
+		expires := publishedAt.Add(time.Duration(service.TTLSeconds) * time.Second)
+		if service.TTLSeconds < 30 || service.TTLSeconds > 86400 || !time.Now().Before(expires) {
+			return errors.New("accepted export lease already expired or invalid")
+		}
+		identity := fmt.Sprintf("spiffe://%s/ns/%s/service/%s", a.trustDomain, service.Namespace, service.Name)
+		if len(approvedPeers[identity]) == 0 {
+			return errors.New("missing hub-approved peer scope")
+		}
+		identities[identity] = true
+		routes = append(routes, model.ExportRoute{ServiceIdentity: identity, Target: target, TargetPeers: approvedPeers[identity], LeaseRequired: true, ExpiresAt: expires.UTC().Format(time.RFC3339Nano), AcceptedGeneration: acceptedGeneration})
+	}
+	desired := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "among-clusters-service-routes", Namespace: a.namespace, Labels: map[string]string{"app.kubernetes.io/managed-by": "among-clusters"}}}
+	current, err := a.client.CoreV1().ConfigMaps(a.namespace).Get(ctx, desired.Name, metav1.GetOptions{})
+	if err == nil {
+		if current.Labels["app.kubernetes.io/managed-by"] != "among-clusters" {
+			return errors.New("export route ConfigMap is not owned by among-clusters")
+		}
+		var previous []model.ExportRoute
+		if json.Unmarshal([]byte(current.Data["exports.json"]), &previous) != nil {
+			return errors.New("previous export routes invalid; preserving ownership tombstones")
+		}
+		for _, old := range previous {
+			if old.ServiceIdentity != "" && !identities[old.ServiceIdentity] {
+				routes = append(routes, model.ExportRoute{ServiceIdentity: old.ServiceIdentity, LeaseRequired: true, Revoked: true, ExpiresAt: publishedAt.UTC().Format(time.RFC3339Nano), AcceptedGeneration: acceptedGeneration})
+				identities[old.ServiceIdentity] = true
+			}
+		}
 	}
 	data, _ := json.Marshal(routes)
-	desired := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "among-clusters-service-routes", Namespace: a.namespace, Labels: map[string]string{"app.kubernetes.io/managed-by": "among-clusters"}}, Data: map[string]string{"exports.json": string(data)}}
-	current, err := a.client.CoreV1().ConfigMaps(a.namespace).Get(ctx, desired.Name, metav1.GetOptions{})
+	desired.Data = map[string]string{"exports.json": string(data)}
 	if apierrors.IsNotFound(err) {
 		_, err = a.client.CoreV1().ConfigMaps(a.namespace).Create(ctx, desired, metav1.CreateOptions{})
 		return err

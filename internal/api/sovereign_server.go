@@ -174,14 +174,22 @@ func (s *SovereignServer) controlMessage(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
+	var servicePublishedAt time.Time
+	var approvedExports []model.ApprovedServiceExport
 	if message.Type == "service.snapshot" {
 		var snapshot model.ServiceSnapshot
 		if json.Unmarshal(message.Payload, &snapshot) != nil {
 			http.Error(w, "invalid service snapshot", 400)
 			return
 		}
-		if err = s.Store.SyncAdvertisements(r.Context(), tenant, id, snapshot.Services, s.now()); err != nil {
+		servicePublishedAt = s.now().UTC().Truncate(time.Second)
+		if err = s.Store.SyncAdvertisements(r.Context(), tenant, id, snapshot.Services, servicePublishedAt, message.Generation); err != nil {
 			http.Error(w, err.Error(), 403)
+			return
+		}
+		approvedExports, err = s.Store.ApprovedExports(r.Context(), identity, snapshot.Services, servicePublishedAt, message.Generation)
+		if err != nil {
+			http.Error(w, "accepted export scope unavailable", 503)
 			return
 		}
 	}
@@ -212,6 +220,10 @@ func (s *SovereignServer) controlMessage(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("X-AmongClusters-Generation", strconv.FormatUint(message.Generation, 10))
 	if grantSnapshot != nil {
 		writeJSON(w, 200, grantSnapshot)
+		return
+	}
+	if !servicePublishedAt.IsZero() {
+		writeJSON(w, 202, model.ServiceSnapshotReceipt{PublishedAt: servicePublishedAt, Generation: message.Generation, Exports: approvedExports})
 		return
 	}
 	w.WriteHeader(202)

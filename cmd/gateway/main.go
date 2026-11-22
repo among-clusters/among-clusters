@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"github.com/re8ch/among-clusters/internal/model"
 	"io"
 	"log"
 	"net"
@@ -20,11 +21,7 @@ import (
 	"github.com/quic-go/quic-go"
 )
 
-type exportRoute struct {
-	ServiceIdentity string   `json:"serviceIdentity"`
-	Target          string   `json:"target"`
-	TargetPeers     []string `json:"targetPeers"`
-}
+type exportRoute = model.ExportRoute
 type importRoute struct {
 	Listen           string `json:"listen"`
 	Endpoint         string `json:"endpoint"`
@@ -353,16 +350,9 @@ func handleExport(stream readWriteCloser, routes map[string]exportRoute, peerIde
 		_, _ = stream.Write([]byte{1})
 		return
 	}
-	resolved := make(map[string]exportRoute, len(routes))
-	for key, value := range routes {
-		resolved[key] = value
-	}
-	for _, route := range readExportFile(env("EXPORTS_FILE", "/routes/exports.json")) {
-		resolved[route.ServiceIdentity] = route
-	}
-	route, ok := resolved[string(identity)]
+	route, ok := dynamicExports.lookup(env("EXPORTS_FILE", "/routes/exports.json"), routes, string(identity), time.Now())
 	if !ok {
-		log.Printf("export request from %s rejected: service identity %s is not advertised", peerIdentity, string(identity))
+		log.Printf("export request from %s rejected: service identity %s is not advertised or its dynamic lease is invalid", peerIdentity, string(identity))
 		return
 	}
 	if !routeAllowsIdentity(route, peerIdentities, peerIdentity) {
@@ -404,17 +394,6 @@ func routeAllowsIdentity(route exportRoute, peerIdentities map[string][]string, 
 		}
 	}
 	return false
-}
-func readExportFile(path string) []exportRoute {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
-	var routes []exportRoute
-	if json.Unmarshal(data, &routes) != nil {
-		return nil
-	}
-	return routes
 }
 func serveImport(ctx context.Context, cert tls.Certificate, roots *x509.CertPool, registry *sessionRegistry, route importRoute) {
 	listener, err := net.Listen("tcp", route.Listen)
