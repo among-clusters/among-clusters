@@ -47,6 +47,7 @@ func TestSignedSnapshotMaterializesOnlyPolicyAllowedService(t *testing.T) {
 	client := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), lists, identity, peer, policy)
 	store := &KubernetesSovereignStore{Dynamic: client}
 	service := model.AdvertisedService{Name: "kubernetes", Namespace: "default", ServiceClass: "kubernetes.control-plane", Protocol: "kubernetes-api", Port: 443, TargetPeers: []string{"qwen-re8ch"}, TTLSeconds: 60, PolicyRef: "api-export", Generation: 1}
+	service.PublicIngress = &model.PublicIngress{Endpoints: []model.PublicIngressEndpoint{{ID: "site-a", Site: "site-a", Region: "region-a", Protocol: "https", Address: "192.0.2.10", Port: 443, Hostname: "canary.example.com", Path: "/health", Revision: "reviewed-1"}}}
 	if err := store.SyncAdvertisements(context.Background(), "pilot", "qwen", []model.AdvertisedService{service}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -54,9 +55,43 @@ func TestSignedSnapshotMaterializesOnlyPolicyAllowedService(t *testing.T) {
 	if err != nil || len(ads.Items) != 1 {
 		t.Fatalf("ads=%d err=%v", len(ads.Items), err)
 	}
+	ingress, found, _ := unstructured.NestedMap(ads.Items[0].Object, "spec", "publicIngress")
+	if !found || ingress["endpoints"].([]any)[0].(map[string]any)["address"] != "192.0.2.10" {
+		t.Fatalf("ingress not published: %#v", ingress)
+	}
+	if got := stringSlice(ads.Items[0].Object, "spec", "gatewayEndpoints"); len(got) != 1 || got[0] != "quic://qwen:8443" {
+		t.Fatalf("QUIC changed: %v", got)
+	}
+	service.PublicIngress.Endpoints[0].Address = "192.0.2.11"
+	service.PublicIngress.Endpoints[0].Revision = "reviewed-2"
+	if err := store.SyncAdvertisements(context.Background(), "pilot", "qwen", []model.AdvertisedService{service}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	updated, _ := client.Resource(advertisementsGVR).Namespace("pilot").Get(context.Background(), ads.Items[0].GetName(), metav1.GetOptions{})
+	ingressUpdated, _, _ := unstructured.NestedMap(updated.Object, "spec", "publicIngress")
+	address := ingressUpdated["endpoints"].([]any)[0].(map[string]any)["address"]
+	if address != "192.0.2.11" {
+		t.Fatalf("endpoint did not converge: %s", address)
+	}
 	imports, err := client.Resource(importsGVR).Namespace("pilot").List(context.Background(), metav1.ListOptions{})
 	if err != nil || len(imports.Items) != 1 {
 		t.Fatalf("imports=%d err=%v", len(imports.Items), err)
+	}
+	secondPolicy := policy.DeepCopy()
+	secondPolicy.SetName("api-export-second")
+	_, err = client.Resource(schema.GroupVersionResource{Group: "peering.re8ch.com", Version: "v1alpha1", Resource: "peerpolicies"}).Namespace("pilot").Create(context.Background(), secondPolicy, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondService := service
+	secondService.Name = "another-real-service"
+	secondService.PolicyRef = "api-export-second"
+	if err = store.SyncAdvertisements(context.Background(), "pilot", "qwen", []model.AdvertisedService{service, secondService}, time.Now()); err != nil {
+		t.Fatalf("unrelated policy consumed quota: %v", err)
+	}
+	secondService.PolicyRef = service.PolicyRef
+	if err = store.SyncAdvertisements(context.Background(), "pilot", "qwen", []model.AdvertisedService{service, secondService}, time.Now()); err == nil {
+		t.Fatal("same policy quota not enforced")
 	}
 }
 

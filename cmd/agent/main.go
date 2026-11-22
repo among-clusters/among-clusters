@@ -302,7 +302,23 @@ func (a *agent) advertisedServices(ctx context.Context) ([]model.AdvertisedServi
 		if service.Spec.ClusterIP != "" && service.Spec.ClusterIP != corev1.ClusterIPNone {
 			gatewayTarget = net.JoinHostPort(service.Spec.ClusterIP, strconv.Itoa(int(selected.Port)))
 		}
-		result = append(result, model.AdvertisedService{Name: service.Name, Namespace: service.Namespace, ServiceClass: class, Protocol: protocolName, Port: selected.Port, TargetPeers: targets, TTLSeconds: ttl, PolicyRef: policy, Generation: generation, GatewayTarget: gatewayTarget})
+		var ingress *model.PublicIngress
+		if value := annotations["peering.re8ch.com/public-ingress"]; value != "" {
+			ingress = &model.PublicIngress{}
+			decoder := json.NewDecoder(strings.NewReader(value))
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(ingress); err != nil {
+				return nil, fmt.Errorf("publicIngress for %s/%s: %w", service.Namespace, service.Name, err)
+			}
+			var trailing any
+			if decoder.Decode(&trailing) != io.EOF {
+				return nil, errors.New("publicIngress must contain one JSON object")
+			}
+			if err := model.ValidatePublicIngress(ingress); err != nil {
+				return nil, err
+			}
+		}
+		result = append(result, model.AdvertisedService{Name: service.Name, Namespace: service.Namespace, ServiceClass: class, Protocol: protocolName, Port: selected.Port, TargetPeers: targets, TTLSeconds: ttl, PolicyRef: policy, Generation: generation, GatewayTarget: gatewayTarget, PublicIngress: ingress})
 	}
 	return result, nil
 }

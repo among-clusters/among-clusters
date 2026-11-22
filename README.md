@@ -103,3 +103,32 @@ Artifact Hub metadata lives under `artifacthub/headlamp`.
 Release tags publish multi-architecture images with SBOM/provenance, all four
 OCI charts, signatures, Artifact Hub repository metadata, and the versioned
 Headlamp archive with its SHA-256 metadata.
+
+## Optional reviewed public HTTPS ingress
+
+A Service selected for advertisement may additionally carry the reviewed annotation
+`peering.re8ch.com/public-ingress`, containing one JSON object:
+
+```json
+{"endpoints":[{"id":"site-a","site":"site-a","region":"region-a","protocol":"https","address":"192.0.2.10","port":443,"hostname":"canary.example.com","path":"/health","revision":"reviewed-1"}]}
+```
+
+The agent includes this typed contract in its signed service snapshot. The hub
+validates it and preserves it as `ServiceAdvertisement.spec.publicIngress`; the
+existing import reconciler projects the currently observed contract and source
+UID/generation/resourceVersion into `ImportedService.status`. Expired, revoked,
+missing or non-targeted advertisements cannot produce a Ready import contract.
+The public ingress is distinct from the local Service port and QUIC
+`gatewayEndpoints`; no QUIC URL is interpreted as an HTTPS address.
+
+Consumers must bind exact advertisement/import UIDs, publisher, service identity
+and protocol, evaluate publication time plus TTL locally, and reject a stale
+import revision. A changed ingress must be probed independently before use;
+old endpoint health must not carry across address changes. Admission of these
+facts does not replace the consumer's own AF path evidence or DNS/TLS policy.
+Existing services without the annotation retain their prior transport contract.
+
+Each advertisement keeps one real Service identity and publisher owner while
+`publicIngress.endpoints` exposes up to 32 reviewed site endpoints. Stable unique
+IDs survive list reordering; consumers select an explicit endpoint ID. This is
+not permission for a publisher to claim another cluster's relay ownership.

@@ -140,6 +140,13 @@ func (r *SovereignReconciler) reconcileImports(ctx context.Context) {
 	}
 	for i := range list.Items {
 		o := &list.Items[i]
+		if o.GetDeletionTimestamp() != nil {
+			_ = unstructured.SetNestedField(o.Object, "Failed", "status", "state")
+			_ = unstructured.SetNestedField(o.Object, "ImportDeleting", "status", "reason")
+			unstructured.RemoveNestedField(o.Object, "status", "publicIngress")
+			_, _ = r.Client.Resource(importsGVR).Namespace(o.GetNamespace()).UpdateStatus(ctx, o, metav1.UpdateOptions{})
+			continue
+		}
 		suspended, _, _ := unstructured.NestedBool(o.Object, "spec", "suspended")
 		name, _, _ := unstructured.NestedString(o.Object, "spec", "localServiceName")
 		localPort, found, _ := unstructured.NestedInt64(o.Object, "spec", "localPort")
@@ -147,9 +154,46 @@ func (r *SovereignReconciler) reconcileImports(ctx context.Context) {
 			localPort = 8443
 		}
 		state := "Ready"
+		reason := ""
+		adName, _, _ := unstructured.NestedString(o.Object, "spec", "advertisementRef")
+		ad, adErr := r.Client.Resource(advertisementsGVR).Namespace(o.GetNamespace()).Get(ctx, adName, metav1.GetOptions{})
+		if adErr != nil {
+			state, reason = "Failed", "AdvertisementUnavailable"
+		} else {
+			revoked, _, _ := unstructured.NestedBool(ad.Object, "spec", "revoked")
+			ttl, _, _ := unstructured.NestedInt64(ad.Object, "spec", "ttlSeconds")
+			published := ad.GetCreationTimestamp().Time
+			if value := ad.GetAnnotations()["peering.re8ch.com/last-published-at"]; value != "" {
+				var err error
+				published, err = time.Parse(time.RFC3339, value)
+				if err != nil {
+					state, reason = "Failed", "PublicationTimeInvalid"
+				}
+			}
+			expires := published.Add(time.Duration(ttl) * time.Second)
+			peerRef, _, _ := unstructured.NestedString(o.Object, "spec", "peerRef")
+			if ad.GetDeletionTimestamp() != nil {
+				state, reason = "Failed", "AdvertisementDeleting"
+			} else if revoked {
+				state, reason = "Expired", "AdvertisementRevoked"
+			} else if ttl < 30 || ttl > 86400 || !r.now().Before(expires) || published.After(r.now()) {
+				state, reason = "Expired", "AdvertisementExpired"
+			} else if !containsString(stringSlice(ad.Object, "spec", "targetPeers"), peerRef) {
+				state, reason = "Failed", "PeerNotTargeted"
+			}
+			_ = unstructured.SetNestedField(o.Object, expires.UTC().Format(time.RFC3339), "status", "expiresAt")
+			_ = unstructured.SetNestedField(o.Object, string(ad.GetUID()), "status", "advertisementUID")
+			_ = unstructured.SetNestedField(o.Object, ad.GetGeneration(), "status", "advertisementGeneration")
+			_ = unstructured.SetNestedField(o.Object, ad.GetResourceVersion(), "status", "advertisementResourceVersion")
+			if ingress, found, _ := unstructured.NestedMap(ad.Object, "spec", "publicIngress"); found && state == "Ready" {
+				_ = unstructured.SetNestedMap(o.Object, ingress, "status", "publicIngress")
+			} else {
+				unstructured.RemoveNestedField(o.Object, "status", "publicIngress")
+			}
+		}
 		if suspended {
 			state = "Suspended"
-		} else {
+		} else if state == "Ready" {
 			svc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: o.GetNamespace(), Labels: map[string]string{"app.kubernetes.io/managed-by": "among-clusters", "peering.re8ch.com/import": o.GetName()}}, Spec: corev1.ServiceSpec{Selector: map[string]string{"app.kubernetes.io/name": "among-clusters-gateway"}, Ports: []corev1.ServicePort{{Name: "service", Port: 6443, TargetPort: intstr.FromInt32(int32(localPort)), Protocol: corev1.ProtocolTCP}}}}
 			if _, err = r.Core.CoreV1().Services(o.GetNamespace()).Create(ctx, svc, metav1.CreateOptions{}); err != nil {
 				if existing, getErr := r.Core.CoreV1().Services(o.GetNamespace()).Get(ctx, name, metav1.GetOptions{}); getErr == nil && existing.Labels["peering.re8ch.com/import"] != o.GetName() {
@@ -158,6 +202,11 @@ func (r *SovereignReconciler) reconcileImports(ctx context.Context) {
 			}
 		}
 		_ = unstructured.SetNestedField(o.Object, state, "status", "state")
+		if state != "Ready" {
+			unstructured.RemoveNestedField(o.Object, "status", "publicIngress")
+		}
+		_ = unstructured.SetNestedField(o.Object, reason, "status", "reason")
+		_ = unstructured.SetNestedField(o.Object, o.GetGeneration(), "status", "observedGeneration")
 		_ = unstructured.SetNestedField(o.Object, o.GetNamespace()+"/"+name, "status", "serviceRef")
 		_, _ = r.Client.Resource(importsGVR).Namespace(o.GetNamespace()).UpdateStatus(ctx, o, metav1.UpdateOptions{})
 	}

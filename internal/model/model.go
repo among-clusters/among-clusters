@@ -47,17 +47,34 @@ type BundleConfirmation struct {
 	BundleDigest string `json:"bundleDigest"`
 }
 
+type PublicIngressEndpoint struct {
+	ID       string `json:"id"`
+	Site     string `json:"site"`
+	Region   string `json:"region"`
+	Protocol string `json:"protocol"`
+	Address  string `json:"address"`
+	Port     int32  `json:"port"`
+	Hostname string `json:"hostname"`
+	Path     string `json:"path"`
+	Revision string `json:"revision"`
+}
+
+type PublicIngress struct {
+	Endpoints []PublicIngressEndpoint `json:"endpoints"`
+}
+
 type AdvertisedService struct {
-	Name          string   `json:"name"`
-	Namespace     string   `json:"namespace"`
-	ServiceClass  string   `json:"serviceClass"`
-	Protocol      string   `json:"protocol"`
-	Port          int32    `json:"port"`
-	TargetPeers   []string `json:"targetPeers"`
-	TTLSeconds    int64    `json:"ttlSeconds"`
-	PolicyRef     string   `json:"policyRef"`
-	Generation    int64    `json:"generation"`
-	GatewayTarget string   `json:"-"`
+	Name          string         `json:"name"`
+	Namespace     string         `json:"namespace"`
+	ServiceClass  string         `json:"serviceClass"`
+	Protocol      string         `json:"protocol"`
+	Port          int32          `json:"port"`
+	TargetPeers   []string       `json:"targetPeers"`
+	TTLSeconds    int64          `json:"ttlSeconds"`
+	PolicyRef     string         `json:"policyRef"`
+	Generation    int64          `json:"generation"`
+	GatewayTarget string         `json:"-"`
+	PublicIngress *PublicIngress `json:"publicIngress,omitempty"`
 }
 
 type ServiceSnapshot struct {

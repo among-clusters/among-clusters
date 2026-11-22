@@ -107,3 +107,20 @@ func TestSyncIntervalIsBounded(t *testing.T) {
 		t.Fatalf("unsafe interval = %s", got)
 	}
 }
+
+func TestPublicIngressCopiedOnlyFromReviewedServiceAnnotation(t *testing.T) {
+	svc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "canary", Namespace: "tenant", Labels: map[string]string{"peering.re8ch.com/advertise": "true"}, Annotations: map[string]string{"peering.re8ch.com/protocol": "https", "peering.re8ch.com/service-class": "web", "peering.re8ch.com/policy-ref": "reviewed-web", "peering.re8ch.com/target-peers": "provider-consumer", "peering.re8ch.com/public-ingress": `{"endpoints":[{"id":"site-a","site":"site-a","region":"region-a","protocol":"https","address":"192.0.2.10","port":443,"hostname":"canary.example.com","path":"/health","revision":"reviewed-1"}]}`}}, Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{{Port: 8443}}}}
+	a := &agent{client: fake.NewSimpleClientset(svc)}
+	services, err := a.advertisedServices(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(services) != 1 || services[0].PublicIngress == nil || services[0].PublicIngress.Endpoints[0].Address != "192.0.2.10" || services[0].Port != 8443 {
+		t.Fatalf("unexpected contract %#v", services)
+	}
+	svc.Annotations["peering.re8ch.com/public-ingress"] = `{"protocol":"quic"}`
+	a.client = fake.NewSimpleClientset(svc)
+	if _, err = a.advertisedServices(context.Background()); err == nil {
+		t.Fatal("invalid reviewed ingress accepted")
+	}
+}
