@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -41,8 +42,8 @@ func TestOneSidedPublicGatewayIsConnectable(t *testing.T) {
 
 func TestImportObservesEndpointRevisionAndWithdrawsOnExpiry(t *testing.T) {
 	now := time.Unix(1000, 0).UTC()
-	ad := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "peering.re8ch.com/v1alpha1", "kind": "ServiceAdvertisement", "metadata": map[string]any{"name": "canary", "namespace": "tenant", "uid": "ad-uid", "generation": int64(2), "annotations": map[string]any{"peering.re8ch.com/last-published-at": now.Format(time.RFC3339)}}, "spec": map[string]any{"ttlSeconds": int64(60), "targetPeers": []any{"provider-consumer"}, "publicIngress": map[string]any{"protocol": "https", "address": "192.0.2.10", "port": int64(443), "hostname": "canary.example.com", "path": "/health", "revision": "reviewed-1"}}}}
-	imp := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "peering.re8ch.com/v1alpha1", "kind": "ImportedService", "metadata": map[string]any{"name": "canary-import", "namespace": "tenant", "generation": int64(1)}, "spec": map[string]any{"advertisementRef": "canary", "peerRef": "provider-consumer", "localServiceName": "canary-local"}}}
+	ad := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "peering.re8ch.com/v1alpha1", "kind": "ServiceAdvertisement", "metadata": map[string]any{"name": "canary", "namespace": "tenant", "uid": "ad-uid", "generation": int64(2), "annotations": map[string]any{"peering.re8ch.com/last-published-at": now.Format(time.RFC3339)}}, "spec": map[string]any{"publisherRef": "provider", "serviceIdentity": "spiffe://provider.example/ns/apps/service/canary", "protocol": "https", "ttlSeconds": int64(60), "targetPeers": []any{"provider-consumer"}, "publicIngress": map[string]any{"protocol": "https", "address": "192.0.2.10", "port": int64(443), "hostname": "canary.example.com", "path": "/health", "revision": "reviewed-1"}}}}
+	imp := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "peering.re8ch.com/v1alpha1", "kind": "ImportedService", "metadata": map[string]any{"name": "canary-import", "namespace": "tenant", "uid": "import-uid", "generation": int64(1)}, "spec": map[string]any{"advertisementRef": "canary", "peerRef": "provider-consumer", "localServiceName": "canary-local"}}}
 	client := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{importsGVR: "ImportedServiceList"}, ad, imp)
 	r := &SovereignReconciler{Client: client, Core: corefake.NewSimpleClientset(), Now: func() time.Time { return now }}
 	r.reconcileImports(context.Background())
@@ -52,6 +53,11 @@ func TestImportObservesEndpointRevisionAndWithdrawsOnExpiry(t *testing.T) {
 	if state != "Ready" || address != "192.0.2.10" {
 		t.Fatalf("state %s endpoint %s", state, address)
 	}
+	fixture, err := json.Marshal(map[string]any{"advertisement": ad.Object, "importedService": got.Object})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log("PUBLIC_INGRESS_CONTRACT=" + string(fixture))
 	_ = unstructured.SetNestedField(ad.Object, "192.0.2.11", "spec", "publicIngress", "address")
 	_, _ = client.Resource(advertisementsGVR).Namespace("tenant").Update(context.Background(), ad, metav1.UpdateOptions{})
 	r.reconcileImports(context.Background())
