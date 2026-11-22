@@ -31,7 +31,7 @@ func TestPublicationRequiresHubAcceptanceAndReceiptBeforeRouteWrite(t *testing.T
 		status   int
 		body     string
 		accepted bool
-	}{{"denied", 403, "policy denied", false}, {"old-hub-no-receipt", 202, "", false}, {"accepted", 202, `{"publishedAt":"` + time.Now().UTC().Format(time.RFC3339Nano) + `","generation":1,"exports":[{"serviceIdentity":"spiffe://provider.example/ns/apps/service/canary","approvedPeerRefs":["provider-consumer"],"ttlSeconds":60}]}`, true}} {
+	}{{"denied", 403, "policy denied", false}, {"old-hub-no-receipt", 202, "", false}, {"wrong-generation", 202, `{"publishedAt":"` + time.Now().UTC().Format(time.RFC3339Nano) + `","generation":2,"exports":[{"serviceIdentity":"spiffe://provider.example/ns/apps/service/canary","approvedPeerRefs":["provider-consumer"],"ttlSeconds":60}]}`, false}, {"missing-publication-time", 202, `{"generation":1,"exports":[{"serviceIdentity":"spiffe://provider.example/ns/apps/service/canary","approvedPeerRefs":["provider-consumer"],"ttlSeconds":60}]}`, false}, {"accepted", 202, `{"publishedAt":"` + time.Now().UTC().Format(time.RFC3339Nano) + `","generation":1,"exports":[{"serviceIdentity":"spiffe://provider.example/ns/apps/service/canary","approvedPeerRefs":["provider-consumer"],"ttlSeconds":60}]}`, true}} {
 		t.Run(test.name, func(t *testing.T) {
 			called := false
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
