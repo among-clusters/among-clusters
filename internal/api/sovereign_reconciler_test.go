@@ -87,4 +87,26 @@ func TestImportObservesEndpointRevisionAndWithdrawsOnExpiry(t *testing.T) {
 	if reason != "AdvertisementRevoked" {
 		t.Fatalf("revocation not propagated: %s", reason)
 	}
+	_ = unstructured.SetNestedField(ad.Object, false, "spec", "revoked")
+	deleting := metav1.NewTime(now)
+	ad.SetDeletionTimestamp(&deleting)
+	ad.SetFinalizers([]string{"example.com/test-finalizer"})
+	_, _ = client.Resource(advertisementsGVR).Namespace("tenant").Update(context.Background(), ad, metav1.UpdateOptions{})
+	r.reconcileImports(context.Background())
+	got, _ = client.Resource(importsGVR).Namespace("tenant").Get(context.Background(), "canary-import", metav1.GetOptions{})
+	reason, _, _ = unstructured.NestedString(got.Object, "status", "reason")
+	state, _, _ = unstructured.NestedString(got.Object, "status", "state")
+	_, found, _ = unstructured.NestedMap(got.Object, "status", "publicIngress")
+	if state != "Failed" || reason != "AdvertisementDeleting" || found {
+		t.Fatalf("terminating advertisement remains usable: %s %s ingress=%v", state, reason, found)
+	}
+	got.SetDeletionTimestamp(&deleting)
+	got.SetFinalizers([]string{"example.com/test-finalizer"})
+	_, _ = client.Resource(importsGVR).Namespace("tenant").Update(context.Background(), got, metav1.UpdateOptions{})
+	r.reconcileImports(context.Background())
+	got, _ = client.Resource(importsGVR).Namespace("tenant").Get(context.Background(), "canary-import", metav1.GetOptions{})
+	reason, _, _ = unstructured.NestedString(got.Object, "status", "reason")
+	if reason != "ImportDeleting" {
+		t.Fatalf("terminating import not guarded: %s", reason)
+	}
 }

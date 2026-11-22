@@ -140,6 +140,13 @@ func (r *SovereignReconciler) reconcileImports(ctx context.Context) {
 	}
 	for i := range list.Items {
 		o := &list.Items[i]
+		if o.GetDeletionTimestamp() != nil {
+			_ = unstructured.SetNestedField(o.Object, "Failed", "status", "state")
+			_ = unstructured.SetNestedField(o.Object, "ImportDeleting", "status", "reason")
+			unstructured.RemoveNestedField(o.Object, "status", "publicIngress")
+			_, _ = r.Client.Resource(importsGVR).Namespace(o.GetNamespace()).UpdateStatus(ctx, o, metav1.UpdateOptions{})
+			continue
+		}
 		suspended, _, _ := unstructured.NestedBool(o.Object, "spec", "suspended")
 		name, _, _ := unstructured.NestedString(o.Object, "spec", "localServiceName")
 		localPort, found, _ := unstructured.NestedInt64(o.Object, "spec", "localPort")
@@ -165,7 +172,9 @@ func (r *SovereignReconciler) reconcileImports(ctx context.Context) {
 			}
 			expires := published.Add(time.Duration(ttl) * time.Second)
 			peerRef, _, _ := unstructured.NestedString(o.Object, "spec", "peerRef")
-			if revoked {
+			if ad.GetDeletionTimestamp() != nil {
+				state, reason = "Failed", "AdvertisementDeleting"
+			} else if revoked {
 				state, reason = "Expired", "AdvertisementRevoked"
 			} else if ttl < 30 || ttl > 86400 || !r.now().Before(expires) || published.After(r.now()) {
 				state, reason = "Expired", "AdvertisementExpired"
