@@ -17,6 +17,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -376,6 +377,12 @@ func (s *KubernetesSovereignStore) SyncAdvertisements(ctx context.Context, tenan
 		if service.Name == "" || service.Namespace == "" || service.PolicyRef == "" || service.Port < 1 || len(service.TargetPeers) == 0 {
 			return errors.New("invalid service advertisement")
 		}
+		if service.TTLSeconds < 30 || service.TTLSeconds > 86400 || service.Generation < 1 {
+			return errors.New("invalid service advertisement TTL/generation")
+		}
+		if err := model.ValidatePublicIngress(service.PublicIngress); err != nil {
+			return err
+		}
 		policy, getErr := s.Dynamic.Resource(schema.GroupVersionResource{Group: "peering.re8ch.com", Version: "v1alpha1", Resource: "peerpolicies"}).Namespace(tenant).Get(ctx, service.PolicyRef, metav1.GetOptions{})
 		if getErr != nil {
 			return fmt.Errorf("policy %s unavailable: %w", service.PolicyRef, getErr)
@@ -442,6 +449,13 @@ func (s *KubernetesSovereignStore) SyncAdvertisements(ctx context.Context, tenan
 		name := advertisementName(issuer, service)
 		seen[name] = struct{}{}
 		spec := map[string]any{"publisherRef": issuer, "serviceIdentity": fmt.Sprintf("spiffe://%s/ns/%s/service/%s", identity.TrustDomain, service.Namespace, service.Name), "serviceClass": service.ServiceClass, "protocol": service.Protocol, "port": int64(service.Port), "localServiceRef": map[string]any{"name": service.Name}, "gatewayEndpoints": stringValues(identity.GatewayEndpoints), "targetPeers": stringValues(targetPeers), "ttlSeconds": service.TTLSeconds, "generation": service.Generation, "policyRef": service.PolicyRef, "revoked": false}
+		if service.PublicIngress != nil {
+			value, err := runtime.DefaultUnstructuredConverter.ToUnstructured(service.PublicIngress)
+			if err != nil {
+				return err
+			}
+			spec["publicIngress"] = value
+		}
 		object := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "peering.re8ch.com/v1alpha1", "kind": "ServiceAdvertisement", "metadata": map[string]any{"name": name, "namespace": tenant, "labels": map[string]any{"peering.re8ch.com/publisher": issuer}, "annotations": map[string]any{"peering.re8ch.com/last-published-at": now.UTC().Format(time.RFC3339)}}, "spec": spec}}
 		existing, getErr := s.Dynamic.Resource(advertisementsGVR).Namespace(tenant).Get(ctx, name, metav1.GetOptions{})
 		if apierrors.IsNotFound(getErr) {
