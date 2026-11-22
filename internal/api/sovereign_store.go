@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -35,23 +36,26 @@ type SovereignStore interface {
 	RecordGeneration(context.Context, string, string, uint64, string) error
 	ConfirmPeerBundle(context.Context, string, string, model.BundleConfirmation) error
 	ObserveLink(context.Context, string, string, model.LinkObservation) error
-	SyncAdvertisements(context.Context, string, string, []model.AdvertisedService, time.Time) error
+	SyncAdvertisements(context.Context, string, string, []model.AdvertisedService, time.Time, ...uint64) error
+	ApprovedExports(context.Context, model.IdentityRegistration, []model.AdvertisedService, time.Time, uint64) ([]model.ApprovedServiceExport, error)
 	PendingGrants(context.Context, string, string, time.Time) ([]model.GrantInstruction, error)
 	FulfillGrant(context.Context, string, string, model.GrantFulfillment) error
 }
 
 type MemorySovereignStore struct {
-	mu             sync.Mutex
-	Invitations    map[string]model.Invitation
-	Identities     map[string]model.IdentityRegistration
-	Generations    map[string]uint64
-	Nonces         map[string]map[string]struct{}
-	Links          map[string]model.LinkObservation
-	Advertisements map[string][]model.AdvertisedService
+	mu                     sync.Mutex
+	Invitations            map[string]model.Invitation
+	Identities             map[string]model.IdentityRegistration
+	Generations            map[string]uint64
+	Nonces                 map[string]map[string]struct{}
+	Links                  map[string]model.LinkObservation
+	Advertisements         map[string][]model.AdvertisedService
+	PublicationTimes       map[string]time.Time
+	PublicationGenerations map[string]uint64
 }
 
 func NewMemorySovereignStore() *MemorySovereignStore {
-	return &MemorySovereignStore{Invitations: map[string]model.Invitation{}, Identities: map[string]model.IdentityRegistration{}, Generations: map[string]uint64{}, Nonces: map[string]map[string]struct{}{}, Links: map[string]model.LinkObservation{}, Advertisements: map[string][]model.AdvertisedService{}}
+	return &MemorySovereignStore{Invitations: map[string]model.Invitation{}, Identities: map[string]model.IdentityRegistration{}, Generations: map[string]uint64{}, Nonces: map[string]map[string]struct{}{}, Links: map[string]model.LinkObservation{}, Advertisements: map[string][]model.AdvertisedService{}, PublicationTimes: map[string]time.Time{}, PublicationGenerations: map[string]uint64{}}
 }
 func (s *MemorySovereignStore) CreateInvitation(_ context.Context, v model.Invitation) error {
 	s.mu.Lock()
@@ -153,10 +157,14 @@ func (s *MemorySovereignStore) ObserveLink(_ context.Context, tenant, _ string, 
 	s.Links[tenant+"/"+observation.LinkRef] = observation
 	return nil
 }
-func (s *MemorySovereignStore) SyncAdvertisements(_ context.Context, tenant, issuer string, services []model.AdvertisedService, _ time.Time) error {
+func (s *MemorySovereignStore) SyncAdvertisements(_ context.Context, tenant, issuer string, services []model.AdvertisedService, published time.Time, generation ...uint64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.Advertisements[tenant+"/"+issuer] = append([]model.AdvertisedService(nil), services...)
+	s.PublicationTimes[tenant+"/"+issuer] = published
+	if len(generation) > 0 {
+		s.PublicationGenerations[tenant+"/"+issuer] = generation[0]
+	}
 	return nil
 }
 func (s *MemorySovereignStore) PendingGrants(context.Context, string, string, time.Time) ([]model.GrantInstruction, error) {
@@ -367,7 +375,7 @@ func importPort(name string) int64 {
 	return int64(20000 + hash.Sum32()%10000)
 }
 
-func (s *KubernetesSovereignStore) SyncAdvertisements(ctx context.Context, tenant, issuer string, services []model.AdvertisedService, now time.Time) error {
+func (s *KubernetesSovereignStore) SyncAdvertisements(ctx context.Context, tenant, issuer string, services []model.AdvertisedService, now time.Time, generation ...uint64) error {
 	identity, err := s.Identity(ctx, tenant, issuer)
 	if err != nil {
 		return err
@@ -461,6 +469,9 @@ func (s *KubernetesSovereignStore) SyncAdvertisements(ctx context.Context, tenan
 			spec["publicIngress"] = value
 		}
 		object := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "peering.re8ch.com/v1alpha1", "kind": "ServiceAdvertisement", "metadata": map[string]any{"name": name, "namespace": tenant, "labels": map[string]any{"peering.re8ch.com/publisher": issuer}, "annotations": map[string]any{"peering.re8ch.com/last-published-at": now.UTC().Format(time.RFC3339)}}, "spec": spec}}
+		if len(generation) > 0 {
+			object.SetAnnotations(map[string]string{"peering.re8ch.com/last-published-at": now.UTC().Format(time.RFC3339), "peering.re8ch.com/control-generation": strconv.FormatUint(generation[0], 10)})
+		}
 		existing, getErr := s.Dynamic.Resource(advertisementsGVR).Namespace(tenant).Get(ctx, name, metav1.GetOptions{})
 		if apierrors.IsNotFound(getErr) {
 			_, err = s.Dynamic.Resource(advertisementsGVR).Namespace(tenant).Create(ctx, object, metav1.CreateOptions{})

@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"github.com/re8ch/among-clusters/internal/model"
+	"github.com/re8ch/among-clusters/internal/protocol"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -85,5 +86,26 @@ func TestReleasedInvitationCanBeRetried(t *testing.T) {
 	}
 	if _, err = store.ConsumeInvitation(context.Background(), "retry", "hash", "tenant-a", nil, now); err != nil {
 		t.Fatalf("released invitation could not be retried: %v", err)
+	}
+}
+
+func TestServiceSnapshotReceiptUsesAcceptedPublicationTime(t *testing.T) {
+	store := NewMemorySovereignStore()
+	now := time.Now().UTC().Truncate(time.Second)
+	pub, key, _ := ed25519.GenerateKey(rand.Reader)
+	identity := model.IdentityRegistration{ClusterID: "provider", Tenant: "tenant", TrustDomain: "provider.example", SPIFFEID: "spiffe://provider.example/cluster/provider", PublicKey: base64.RawStdEncoding.EncodeToString(pub)}
+	store.Identities["tenant/provider"] = identity
+	payload, _ := json.Marshal(model.ServiceSnapshot{})
+	message := model.ControlMessage{Issuer: identity.SPIFFEID, Audience: "hub", Generation: 1, IssuedAt: now, ExpiresAt: now.Add(time.Minute), Nonce: "publication-1", Type: "service.snapshot", Payload: payload}
+	if err := protocol.Sign(&message, key); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(message)
+	response := httptest.NewRecorder()
+	(&SovereignServer{Store: store, Now: func() time.Time { return now }}).Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/v1/peers/tenant/provider/messages", bytes.NewReader(body)))
+	var receipt model.ServiceSnapshotReceipt
+	err := json.Unmarshal(response.Body.Bytes(), &receipt)
+	if response.Code != 202 || err != nil || !receipt.PublishedAt.Equal(now) || receipt.Generation != message.Generation {
+		t.Fatalf("invalid accepted receipt: %d %s", response.Code, response.Body.String())
 	}
 }
