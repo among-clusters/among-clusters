@@ -47,13 +47,20 @@ type BundleConfirmation struct {
 	BundleDigest string `json:"bundleDigest"`
 }
 
-type PublicIngress struct {
+type PublicIngressEndpoint struct {
+	ID       string `json:"id"`
+	Site     string `json:"site"`
+	Region   string `json:"region"`
 	Protocol string `json:"protocol"`
 	Address  string `json:"address"`
 	Port     int32  `json:"port"`
 	Hostname string `json:"hostname"`
 	Path     string `json:"path"`
 	Revision string `json:"revision"`
+}
+
+type PublicIngress struct {
+	Endpoints []PublicIngressEndpoint `json:"endpoints"`
 }
 
 type AdvertisedService struct {

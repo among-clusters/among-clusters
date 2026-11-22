@@ -110,7 +110,7 @@ A Service selected for advertisement may additionally carry the reviewed annotat
 `peering.re8ch.com/public-ingress`, containing one JSON object:
 
 ```json
-{"protocol":"https","address":"192.0.2.10","port":443,"hostname":"canary.example.com","path":"/health","revision":"reviewed-1"}
+{"endpoints":[{"id":"site-a","site":"site-a","region":"region-a","protocol":"https","address":"192.0.2.10","port":443,"hostname":"canary.example.com","path":"/health","revision":"reviewed-1"}]}
 ```
 
 The agent includes this typed contract in its signed service snapshot. The hub
@@ -127,3 +127,8 @@ import revision. A changed ingress must be probed independently before use;
 old endpoint health must not carry across address changes. Admission of these
 facts does not replace the consumer's own AF path evidence or DNS/TLS policy.
 Existing services without the annotation retain their prior transport contract.
+
+Each advertisement keeps one real Service identity and publisher owner while
+`publicIngress.endpoints` exposes up to 32 reviewed site endpoints. Stable unique
+IDs survive list reordering; consumers select an explicit endpoint ID. This is
+not permission for a publisher to claim another cluster's relay ownership.

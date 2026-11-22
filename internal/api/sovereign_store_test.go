@@ -47,7 +47,7 @@ func TestSignedSnapshotMaterializesOnlyPolicyAllowedService(t *testing.T) {
 	client := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), lists, identity, peer, policy)
 	store := &KubernetesSovereignStore{Dynamic: client}
 	service := model.AdvertisedService{Name: "kubernetes", Namespace: "default", ServiceClass: "kubernetes.control-plane", Protocol: "kubernetes-api", Port: 443, TargetPeers: []string{"qwen-re8ch"}, TTLSeconds: 60, PolicyRef: "api-export", Generation: 1}
-	service.PublicIngress = &model.PublicIngress{Protocol: "https", Address: "192.0.2.10", Port: 443, Hostname: "canary.example.com", Path: "/health", Revision: "reviewed-1"}
+	service.PublicIngress = &model.PublicIngress{Endpoints: []model.PublicIngressEndpoint{{ID: "site-a", Site: "site-a", Region: "region-a", Protocol: "https", Address: "192.0.2.10", Port: 443, Hostname: "canary.example.com", Path: "/health", Revision: "reviewed-1"}}}
 	if err := store.SyncAdvertisements(context.Background(), "pilot", "qwen", []model.AdvertisedService{service}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -56,19 +56,20 @@ func TestSignedSnapshotMaterializesOnlyPolicyAllowedService(t *testing.T) {
 		t.Fatalf("ads=%d err=%v", len(ads.Items), err)
 	}
 	ingress, found, _ := unstructured.NestedMap(ads.Items[0].Object, "spec", "publicIngress")
-	if !found || ingress["address"] != "192.0.2.10" {
+	if !found || ingress["endpoints"].([]any)[0].(map[string]any)["address"] != "192.0.2.10" {
 		t.Fatalf("ingress not published: %#v", ingress)
 	}
 	if got := stringSlice(ads.Items[0].Object, "spec", "gatewayEndpoints"); len(got) != 1 || got[0] != "quic://qwen:8443" {
 		t.Fatalf("QUIC changed: %v", got)
 	}
-	service.PublicIngress.Address = "192.0.2.11"
-	service.PublicIngress.Revision = "reviewed-2"
+	service.PublicIngress.Endpoints[0].Address = "192.0.2.11"
+	service.PublicIngress.Endpoints[0].Revision = "reviewed-2"
 	if err := store.SyncAdvertisements(context.Background(), "pilot", "qwen", []model.AdvertisedService{service}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	updated, _ := client.Resource(advertisementsGVR).Namespace("pilot").Get(context.Background(), ads.Items[0].GetName(), metav1.GetOptions{})
-	address, _, _ := unstructured.NestedString(updated.Object, "spec", "publicIngress", "address")
+	ingressUpdated, _, _ := unstructured.NestedMap(updated.Object, "spec", "publicIngress")
+	address := ingressUpdated["endpoints"].([]any)[0].(map[string]any)["address"]
 	if address != "192.0.2.11" {
 		t.Fatalf("endpoint did not converge: %s", address)
 	}
