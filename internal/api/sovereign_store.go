@@ -373,6 +373,10 @@ func (s *KubernetesSovereignStore) SyncAdvertisements(ctx context.Context, tenan
 		return err
 	}
 	seen := map[string]struct{}{}
+	policyCounts := map[string]int64{}
+	for _, service := range services {
+		policyCounts[service.PolicyRef]++
+	}
 	for _, service := range services {
 		if service.Name == "" || service.Namespace == "" || service.PolicyRef == "" || service.Port < 1 || len(service.TargetPeers) == 0 {
 			return errors.New("invalid service advertisement")
@@ -392,7 +396,7 @@ func (s *KubernetesSovereignStore) SyncAdvertisements(ctx context.Context, tenan
 		portValues, _, _ := unstructured.NestedSlice(policy.Object, "spec", "ports")
 		directions := stringSlice(policy.Object, "spec", "directions")
 		maximum, found, _ := unstructured.NestedInt64(policy.Object, "spec", "maxAdvertisements")
-		if found && maximum >= 0 && int64(len(services)) > maximum {
+		if found && maximum >= 0 && policyCounts[service.PolicyRef] > maximum {
 			return fmt.Errorf("policy %s advertisement quota exceeded", service.PolicyRef)
 		}
 		selector := stringSlice(policy.Object, "spec", "peerSelector", "matchNames")

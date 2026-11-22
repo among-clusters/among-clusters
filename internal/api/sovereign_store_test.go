@@ -77,6 +77,22 @@ func TestSignedSnapshotMaterializesOnlyPolicyAllowedService(t *testing.T) {
 	if err != nil || len(imports.Items) != 1 {
 		t.Fatalf("imports=%d err=%v", len(imports.Items), err)
 	}
+	secondPolicy := policy.DeepCopy()
+	secondPolicy.SetName("api-export-second")
+	_, err = client.Resource(schema.GroupVersionResource{Group: "peering.re8ch.com", Version: "v1alpha1", Resource: "peerpolicies"}).Namespace("pilot").Create(context.Background(), secondPolicy, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondService := service
+	secondService.Name = "another-real-service"
+	secondService.PolicyRef = "api-export-second"
+	if err = store.SyncAdvertisements(context.Background(), "pilot", "qwen", []model.AdvertisedService{service, secondService}, time.Now()); err != nil {
+		t.Fatalf("unrelated policy consumed quota: %v", err)
+	}
+	secondService.PolicyRef = service.PolicyRef
+	if err = store.SyncAdvertisements(context.Background(), "pilot", "qwen", []model.AdvertisedService{service, secondService}, time.Now()); err == nil {
+		t.Fatal("same policy quota not enforced")
+	}
 }
 
 func TestWildcardSnapshotExpandsOnlyReadyUnsuspendedPeers(t *testing.T) {
