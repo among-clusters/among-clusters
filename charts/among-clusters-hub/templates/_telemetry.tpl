@@ -18,3 +18,12 @@
   value: {{ .Values.sentry.environment | quote }}
 {{- end }}
 {{- end }}
+
+{{- define "among-clusters-hub.sentryHttpsEgress" -}}
+{{- if .Values.sentry.enabled }}
+- to:
+    - ipBlock: {cidr: 0.0.0.0/0}
+    - ipBlock: {cidr: "::/0"}
+  ports: [{protocol: TCP, port: 443}]
+{{- end }}
+{{- end }}

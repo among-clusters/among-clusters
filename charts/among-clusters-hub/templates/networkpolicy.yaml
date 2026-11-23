@@ -11,6 +11,10 @@ spec:
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: {{ .Values.managedAccess.broker.namespace }}}}
         {{- end }}
       ports: [{protocol: TCP, port: 8080}]
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: observability-system}}
+          podSelector: {matchLabels: {app.kubernetes.io/name: vmagent, app.kubernetes.io/instance: re8ch}}
+      ports: [{protocol: TCP, port: 9090}]
   egress:
     - to:
         - ipBlock: {cidr: 0.0.0.0/0}
@@ -18,3 +22,4 @@ spec:
     - to:
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
       ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+    {{- include "among-clusters-hub.sentryHttpsEgress" . | nindent 4 }}

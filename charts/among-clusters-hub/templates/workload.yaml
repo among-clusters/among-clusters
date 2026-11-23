@@ -18,12 +18,14 @@ spec:
           imagePullPolicy: IfNotPresent
           command: [/hub]
           env:
+            - name: POD_IP
+              valueFrom: {fieldRef: {fieldPath: status.podIP}}
             - name: ADMIN_TOKEN
               valueFrom: {secretKeyRef: {name: "{{ .Values.adminTokenSecret }}", key: token}}
             - {name: MANAGED_ACCESS_ENABLED, value: {{ .Values.managedAccess.enabled | quote }}}
             - {name: RECONCILE_INTERVAL, value: {{ .Values.reconcileInterval | quote }}}
             {{- include "among-clusters-hub.sentryEnv" . | nindent 12 }}
-          ports: [{name: http, containerPort: 8080}]
+          ports: [{name: http, containerPort: 8080}, {name: metrics, containerPort: 9090}]
           readinessProbe: {httpGet: {path: /healthz, port: http}}
           livenessProbe: {httpGet: {path: /healthz, port: http}}
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
@@ -31,5 +33,5 @@ spec:
 ---
 apiVersion: v1
 kind: Service
-metadata: {name: among-clusters-hub}
-spec: {selector: {app.kubernetes.io/name: among-clusters-hub}, ports: [{name: http, port: 80, targetPort: http}]}
+metadata: {name: among-clusters-hub, labels: {app.kubernetes.io/name: among-clusters-hub}}
+spec: {selector: {app.kubernetes.io/name: among-clusters-hub}, ports: [{name: http, port: 80, targetPort: http}, {name: metrics, port: 9090, targetPort: metrics}]}

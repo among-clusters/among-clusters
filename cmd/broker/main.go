@@ -66,6 +66,7 @@ func main() {
 	mux.HandleFunc("POST /v1/credentials", b.store)
 	mux.HandleFunc("POST /v1/credentials/revoke", b.revoke)
 	mux.HandleFunc("/k8s/", b.proxy)
+	go diagnostics.ServeMetrics()
 	log.Fatal(http.ListenAndServe(":8080", diagnostics.Handler(mux)))
 }
 func (b *broker) revoke(w http.ResponseWriter, r *http.Request) {
