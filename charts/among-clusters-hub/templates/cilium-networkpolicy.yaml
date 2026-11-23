@@ -9,6 +9,13 @@ spec:
       toPorts:
         - ports:
             - {port: "8080", protocol: TCP}
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: observability-system
+            k8s:app.kubernetes.io/name: vmagent
+            k8s:app.kubernetes.io/instance: re8ch
+      toPorts:
+        - ports: [{port: "9090", protocol: TCP}]
   egress:
     - toEntities: [kube-apiserver]
       toPorts:

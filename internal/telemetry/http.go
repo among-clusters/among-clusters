@@ -38,6 +38,8 @@ type Diagnostics struct {
 	release     string
 	environment string
 	logger      *log.Logger
+	metricsOnce sync.Once
+	metrics     *httpMetrics
 }
 
 func NewFromEnv(component string) *Diagnostics {
@@ -204,7 +206,11 @@ func (d *Diagnostics) Handler(next http.Handler) http.Handler {
 			} else if ctx.Err() != nil {
 				Failure(ctx, "http_response", category(ctx.Err()))
 			}
-			span.SetData("http_status", out.status)
+			status := out.status
+			if status == 0 && recovered == nil && !out.writeError && ctx.Err() == nil {
+				status = http.StatusOK
+			}
+			span.SetData("http_status", status)
 			span.SetData("duration_ms", time.Since(start).Milliseconds())
 			state.mu.Lock()
 			failed := state.failed
@@ -219,6 +225,7 @@ func (d *Diagnostics) Handler(next http.Handler) http.Handler {
 			if errorCategory == "" {
 				errorCategory = "none"
 			}
+			d.observeHTTP(r, status, failed, errorCategory, time.Since(start))
 			d.logCompletion(map[string]any{"timestamp": time.Now().UTC().Format(time.RFC3339Nano), "traceId": span.TraceID.String(), "operationId": op, "sentryEventId": eventID, "release": d.release, "component": d.component, "environment": d.environment, "errorCategory": errorCategory, "durationMs": time.Since(start).Milliseconds()})
 			if recovered != nil {
 				panic(recovered)

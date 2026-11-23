@@ -44,5 +44,6 @@ func main() {
 	}
 	go (&api.SovereignReconciler{Client: client, Core: core, ManagedAccessEnabled: api.ManagedAccessFromEnv(), Interval: interval}).Run(context.Background())
 	log.Printf("AmongClusters hub listening on %s", address)
+	go diagnostics.ServeMetrics()
 	log.Fatal(http.ListenAndServe(address, diagnostics.Handler(server.Handler())))
 }
