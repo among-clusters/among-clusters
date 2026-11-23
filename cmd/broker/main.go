@@ -242,7 +242,9 @@ func (b *broker) proxy(w http.ResponseWriter, r *http.Request) {
 	roots := x509.NewCertPool()
 	roots.AppendCertsFromPEM([]byte(payload.CertificateAuthority))
 	proxy := httputil.NewSingleHostReverseProxy(target)
-	proxy.Transport = telemetry.Transport(&http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: payload.TLSServerName, MinVersion: tls.VersionTLS12}}, "remote_kubernetes", "")
+	requestTransport := &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: payload.TLSServerName, MinVersion: tls.VersionTLS12}}
+	defer requestTransport.CloseIdleConnections()
+	proxy.Transport = telemetry.Transport(requestTransport, "remote_kubernetes", "")
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, _ error) {
 		telemetry.Failure(r.Context(), "remote_proxy", "transport")
 		http.Error(w, "Bad Gateway", http.StatusBadGateway)

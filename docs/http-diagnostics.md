@@ -24,7 +24,9 @@ response delivery. The first failure per request is captured once with safe
 stack frames and operation correlation. Streaming bodies keep their original
 read/close lifecycle and flush behavior; cancellation propagates without replay.
 The Broker identity lookup now uses its existing caller context rather than
-losing cancellation in `http.Client.Get`.
+losing cancellation in `http.Client.Get`. Each proxy request closes only its own
+transport idle connections after the entire proxy/stream returns. Active or
+shared transports are not closed, and no pool/concurrency/TTL limit is added.
 
 No credentials, authorization headers, user/tenant identity, body, arguments,
 result, resource path, URL, hostname, attachments or frame variables are sent.
