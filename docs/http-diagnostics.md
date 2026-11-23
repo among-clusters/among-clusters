@@ -40,3 +40,16 @@ allowance is introduced. Runtime delivery still needs the existing owner to
 configure the DSN reference and reviewed Sentry egress, then prove actual event
 and same-trace ingestion. A signed artifact or an enabled value alone is not
 runtime acceptance.
+
+## Native source correlation
+
+The existing tag release workflow optionally uses the official pinned Sentry
+release action after artifact publication, with full history and
+`among-clusters@<exact source SHA>`. Hub and Broker share this artifact release
+and retain distinct `component` tags. It does not record a production deploy.
+Configure approved `SENTRY_AUTH_TOKEN` in GitHub Secrets, non-secret `SENTRY_ORG`
+and `SENTRY_PROJECT` Variables, and enable `SENTRY_RELEASE_ENABLED` only after
+the native integration registers `among-clusters/among-clusters`. No release
+automation token is passed to runtime. A metadata-only failure/backfill must
+not trigger rebuilding an existing immutable image: use the official Release
+API for that source and verify native commit/PR readback separately.
