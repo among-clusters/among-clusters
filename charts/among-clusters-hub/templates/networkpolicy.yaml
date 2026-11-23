@@ -22,3 +22,4 @@ spec:
     - to:
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
       ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+    {{- include "among-clusters-hub.sentryHttpsEgress" . | nindent 4 }}

@@ -85,3 +85,26 @@ the native integration registers `among-clusters/among-clusters`. No release
 automation token is passed to runtime. A metadata-only failure/backfill must
 not trigger rebuilding an existing immutable image: use the official Release
 API for that source and verify native commit/PR readback separately.
+
+## Sentry egress capability
+
+When Sentry is explicitly enabled, the existing Hub/Broker Kubernetes
+NetworkPolicies allow public TCP 443 for IPv4 and IPv6 so the official SDK can
+reach its configured HTTPS ingestion endpoint. This is a deliberate layer-4
+public HTTPS allowance, **not** an FQDN restriction. Kubernetes NetworkPolicy
+cannot express a Sentry hostname. The original Hub IPv4 world-443 rule remains
+unchanged; the Broker previously had only namespace destinations and therefore
+could not reliably deliver public Sentry traffic. Existing DNS and API rules
+remain unchanged, and no new CNP, inventory permission or network controller is
+introduced. Cilium and Kubernetes allow rules are additive; adding a narrow
+FQDN policy alone would not narrow the existing broad Hub rule. Actual policy
+union and event-ingestion readback remain runtime acceptance requirements.
+
+## Native artifact build
+
+BuildKit builds the five static Go binaries on `BUILDPLATFORM`, targeting its
+explicit `TARGETOS`/`TARGETARCH` with CGO disabled, rather than running the Go
+compiler under QEMU. The existing multi-platform image/final distroless stage,
+signing and provenance pipeline remain in place. Both linux/amd64 and linux/arm64
+ELF machine identifiers are validated before publication; an existing source
+artifact is never rebuilt merely to change telemetry metadata.

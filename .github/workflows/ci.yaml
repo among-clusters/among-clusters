@@ -25,6 +25,8 @@ jobs:
           helm template headlamp charts/among-clusters-headlamp --set headlamp.pluginsPVC.existingClaim=plugins >/tmp/headlamp.yaml
           helm dependency build charts/among-clusters
           helm lint charts/among-clusters --set agent.enabled=true --set among-clusters-agent.clusterID=test --set among-clusters-agent.tenant=test --set among-clusters-agent.trustDomain=test.example --set among-clusters-agent.image.digest=$digest
+      - name: Verify private metrics and Sentry egress render contracts
+        run: go test ./internal/telemetry -run TestChartPrivateMetricsAndSentryEgress -count=1
       - name: Enforce sovereign API and least privilege
         run: |
           test "$(grep -c '^kind: CustomResourceDefinition' charts/among-clusters-hub/crds/sovereign-peering.yaml)" = 8
