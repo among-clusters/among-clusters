@@ -11,10 +11,13 @@ default application data path.
 
 ## Trust model
 
-The 0.3.33 release carries per-Service public ingress endpoints and accepted
+The 0.3.34 release carries per-Service public ingress endpoints and accepted
 dynamic export leases. Upgrade the Hub before Agents: Agents require the Hub's
 publication receipt before renewing dynamic routes. Verify new-stream withdrawal
 and expiry separately from existing-stream draining when accepting the release.
+Managed PE public ingress additionally requires a current owner/Service UID/source
+lease; an expired projection withdraws only public ingress, not ordinary QUIC
+service export. See [the source-lease contract](docs/managed-public-ingress-source.md).
 
 - An owner-side Agent creates and retains cluster identity material locally.
 - Invitations are tenant-bound, short-lived and single-use; the Hub stores only

@@ -303,24 +303,59 @@ func (a *agent) advertisedServices(ctx context.Context) ([]model.AdvertisedServi
 			gatewayTarget = net.JoinHostPort(service.Spec.ClusterIP, strconv.Itoa(int(selected.Port)))
 		}
 		var ingress *model.PublicIngress
-		if value := annotations["peering.re8ch.com/public-ingress"]; value != "" {
-			ingress = &model.PublicIngress{}
-			decoder := json.NewDecoder(strings.NewReader(value))
-			decoder.DisallowUnknownFields()
-			if err := decoder.Decode(ingress); err != nil {
-				return nil, fmt.Errorf("publicIngress for %s/%s: %w", service.Namespace, service.Name, err)
-			}
-			var trailing any
-			if decoder.Decode(&trailing) != io.EOF {
-				return nil, errors.New("publicIngress must contain one JSON object")
-			}
-			if err := model.ValidatePublicIngress(ingress); err != nil {
-				return nil, err
+		if value := annotations["peering.re8ch.com/public-ingress"]; value != "" && a.publicIngressSourceCurrent(&service, time.Now()) {
+			ingress, err = parsePublicIngress(value)
+			if err != nil {
+				if _, managed := annotations[publicIngressOwnerAnnotation]; !managed {
+					return nil, fmt.Errorf("publicIngress for %s/%s: %w", service.Namespace, service.Name, err)
+				}
+				// A bad managed health projection withdraws only public ingress.
+				// The ordinary Service remains in the complete QUIC snapshot.
+				ingress = nil
 			}
 		}
 		result = append(result, model.AdvertisedService{Name: service.Name, Namespace: service.Namespace, ServiceClass: class, Protocol: protocolName, Port: selected.Port, TargetPeers: targets, TTLSeconds: ttl, PolicyRef: policy, Generation: generation, GatewayTarget: gatewayTarget, PublicIngress: ingress})
 	}
 	return result, nil
+}
+
+const (
+	publicIngressOwnerAnnotation      = "networking.re8ch.com/public-ingress-owner"
+	publicIngressSourceUIDAnnotation  = "networking.re8ch.com/public-ingress-source-uid"
+	publicIngressValidUntilAnnotation = "networking.re8ch.com/public-ingress-valid-until"
+	// Reuse the existing service-advertisement TTL protocol maximum.
+	publicIngressMaximumFutureValidity = 86400 * time.Second
+)
+
+func (a *agent) publicIngressSourceCurrent(service *corev1.Service, now time.Time) bool {
+	owner, managed := service.Annotations[publicIngressOwnerAnnotation]
+	if !managed {
+		// Existing explicitly reviewed manual annotations keep their legacy model.
+		return true
+	}
+	if owner == "" || owner != a.clusterID || service.UID == "" ||
+		service.Annotations[publicIngressSourceUIDAnnotation] != string(service.UID) {
+		return false
+	}
+	validUntil, err := time.Parse(time.RFC3339, service.Annotations[publicIngressValidUntilAnnotation])
+	return err == nil && validUntil.After(now) && !validUntil.After(now.Add(publicIngressMaximumFutureValidity))
+}
+
+func parsePublicIngress(value string) (*model.PublicIngress, error) {
+	ingress := &model.PublicIngress{}
+	decoder := json.NewDecoder(strings.NewReader(value))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(ingress); err != nil {
+		return nil, err
+	}
+	var trailing any
+	if decoder.Decode(&trailing) != io.EOF {
+		return nil, errors.New("publicIngress must contain one JSON object")
+	}
+	if err := model.ValidatePublicIngress(ingress); err != nil {
+		return nil, err
+	}
+	return ingress, nil
 }
 
 func (a *agent) publishServices(ctx context.Context) error {
