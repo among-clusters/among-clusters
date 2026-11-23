@@ -31,6 +31,10 @@ shared transports are not closed, and no pool/concurrency/TTL limit is added.
 No credentials, authorization headers, user/tenant identity, body, arguments,
 result, resource path, URL, hostname, attachments or frame variables are sent.
 Sentry's normal asynchronous transport is not flushed on the request path.
+A dedicated zero-prefix JSON completion logger emits UTC timestamp, traceId,
+operationId, sentryEventId, release, component, environment, errorCategory and
+durationMs for native log/trace correlation. Existing unrelated logs keep their
+format, and trace/operation IDs are not metric labels.
 The diagnostics do not alter authentication, grant expiry, key lifecycle, route
 selection, HTTP timeout budgets or the QUIC/TCP Gateway protocol. The L4 Gateway
 is not claimed as an instrumented HTTP hop.

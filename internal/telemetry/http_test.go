@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"github.com/getsentry/sentry-go"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -299,4 +300,33 @@ func TestHubRedirectDoesNotExportTraceToAnotherOrigin(t *testing.T) {
 		resp.Body.Close()
 		w.WriteHeader(resp.StatusCode)
 	})).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
+}
+
+func TestCompletionLogIsPureJSONCorrelatedAndPayloadFree(t *testing.T) {
+	d, _ := collector(t)
+	var output bytes.Buffer
+	d.logger = log.New(&output, "", 0)
+	d.release = "among-clusters@fixture"
+	d.environment = "test"
+	q := httptest.NewRequest("POST", "/privatecanary?privatecanary", strings.NewReader("privatecanary"))
+	q.Header.Set("Authorization", "Bearer privatecanary")
+	q.Header.Set("sentry-trace", "12345678901234567890123456789012-1234567890123456-1")
+	q.Header.Set(OperationHeader, "op_12345678123412341234123456789012")
+	d.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "privatecanary", 503) })).ServeHTTP(httptest.NewRecorder(), q)
+	var data map[string]any
+	if err := json.Unmarshal(output.Bytes(), &data); err != nil {
+		t.Fatalf("log is not pure JSON: %v", err)
+	}
+	if len(data) != 9 || data["traceId"] != "12345678901234567890123456789012" || data["operationId"] != "op_12345678123412341234123456789012" || data["component"] != "test-broker" || data["release"] != d.release || data["environment"] != "test" || data["errorCategory"] != "http_error" {
+		t.Fatal("completion correlation missing")
+	}
+	if id, ok := data["sentryEventId"].(string); !ok || len(id) != 32 {
+		t.Fatal("accepted event ID absent")
+	}
+	if _, err := time.Parse(time.RFC3339Nano, data["timestamp"].(string)); err != nil {
+		t.Fatal("UTC timestamp missing")
+	}
+	if strings.Contains(output.String(), "privatecanary") {
+		t.Fatal("log contains payload")
+	}
 }

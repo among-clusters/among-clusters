@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"github.com/getsentry/sentry-go"
 	"io"
@@ -26,16 +27,21 @@ var operationPattern = regexp.MustCompile(`^op_(?:[0-9a-f]{32}|[0-9a-f]{8}(?:-[0
 type key struct{}
 type requestState struct {
 	operation string
+	eventID   string
+	category  string
 	mu        sync.Mutex
 	failed    bool
 }
 type Diagnostics struct {
-	client    *sentry.Client
-	component string
+	client      *sentry.Client
+	component   string
+	release     string
+	environment string
+	logger      *log.Logger
 }
 
 func NewFromEnv(component string) *Diagnostics {
-	d := &Diagnostics{component: component}
+	d := &Diagnostics{component: component, release: os.Getenv("SENTRY_RELEASE"), environment: os.Getenv("SENTRY_ENVIRONMENT")}
 	if os.Getenv("SENTRY_DSN") == "" {
 		return d
 	}
@@ -110,6 +116,7 @@ func Failure(ctx context.Context, stage, category string) {
 		return
 	}
 	state.failed = true
+	state.category = category
 	if span := sentry.SpanFromContext(ctx); span != nil {
 		span.Status = sentry.SpanStatusInternalError
 	}
@@ -123,7 +130,9 @@ func Failure(ctx context.Context, stage, category string) {
 	event.Tags = map[string]string{"phase": stage, "error_category": category, "operation_id": state.operation}
 	event.Exception = []sentry.Exception{{Type: "HTTPStageError", Value: "HTTP operation failed", Stacktrace: sentry.NewStacktrace()}}
 	event.Fingerprint = []string{"among-http", stage, category}
-	hub.CaptureEvent(event)
+	if id := hub.CaptureEvent(event); id != nil {
+		state.eventID = string(*id)
+	}
 }
 func category(err error) string {
 	if errors.Is(err, context.Canceled) {
@@ -199,6 +208,7 @@ func (d *Diagnostics) Handler(next http.Handler) http.Handler {
 			span.SetData("duration_ms", time.Since(start).Milliseconds())
 			state.mu.Lock()
 			failed := state.failed
+			errorCategory, eventID := state.category, state.eventID
 			state.mu.Unlock()
 			if failed {
 				span.Status = sentry.SpanStatusInternalError
@@ -206,6 +216,10 @@ func (d *Diagnostics) Handler(next http.Handler) http.Handler {
 				span.Status = sentry.SpanStatusOK
 			}
 			span.Finish()
+			if errorCategory == "" {
+				errorCategory = "none"
+			}
+			d.logCompletion(map[string]any{"timestamp": time.Now().UTC().Format(time.RFC3339Nano), "traceId": span.TraceID.String(), "operationId": op, "sentryEventId": eventID, "release": d.release, "component": d.component, "environment": d.environment, "errorCategory": errorCategory, "durationMs": time.Since(start).Milliseconds()})
 			if recovered != nil {
 				panic(recovered)
 			}
@@ -306,4 +320,18 @@ func (b *upgradeBody) Write(p []byte) (int, error) {
 		b.complete(err)
 	}
 	return n, err
+}
+
+var completionLogger = log.New(os.Stdout, "", 0)
+
+func (d *Diagnostics) logCompletion(fields map[string]any) {
+	data, err := json.Marshal(fields)
+	if err != nil {
+		return
+	}
+	logger := d.logger
+	if logger == nil {
+		logger = completionLogger
+	}
+	logger.Print(string(data))
 }
