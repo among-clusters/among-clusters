@@ -82,9 +82,10 @@ type ServiceSnapshot struct {
 }
 
 type AccessRule struct {
-	APIGroups []string `json:"apiGroups"`
-	Resources []string `json:"resources"`
-	Verbs     []string `json:"verbs"`
+	APIGroups     []string `json:"apiGroups"`
+	Resources     []string `json:"resources"`
+	Verbs         []string `json:"verbs"`
+	ResourceNames []string `json:"resourceNames,omitempty"`
 }
 type GrantInstruction struct {
 	Name             string       `json:"name"`
@@ -107,7 +108,8 @@ type CredentialPayload struct {
 	ExpiresAt            time.Time `json:"expiresAt"`
 }
 type GrantSnapshot struct {
-	Grants []GrantInstruction `json:"grants"`
+	Grants          []GrantInstruction `json:"grants"`
+	ProtocolVersion int                `json:"protocolVersion,omitempty"`
 }
 type GrantFulfillment struct {
 	GrantRef      string    `json:"grantRef"`

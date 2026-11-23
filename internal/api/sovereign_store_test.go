@@ -128,7 +128,7 @@ func TestPendingGrantCarriesExplicitClusterScope(t *testing.T) {
 		"spec": map[string]any{
 			"peerRef": "qwen-re8ch", "advertisementRef": "qwen-kubernetes", "scope": "Cluster",
 			"expiresAt": now.Add(time.Hour).Format(time.RFC3339), "approved": true, "revoked": false,
-			"rules": []any{map[string]any{"apiGroups": []any{"*"}, "resources": []any{"*"}, "verbs": []any{"get", "list", "watch"}}},
+			"rules": []any{map[string]any{"apiGroups": []any{""}, "resources": []any{"configmaps"}, "verbs": []any{"get", "patch"}, "resourceNames": []any{"reviewed-canary"}}},
 		},
 	}}
 	lists := map[schema.GroupVersionResource]string{grantsGVR: "ManagedAccessGrantList", advertisementsGVR: "ServiceAdvertisementList"}
@@ -140,6 +140,9 @@ func TestPendingGrantCarriesExplicitClusterScope(t *testing.T) {
 	}
 	if len(grants) != 1 || grants[0].Scope != "Cluster" || grants[0].Generation != 7 {
 		t.Fatalf("grants=%+v, want one generation-bound cluster-scoped grant", grants)
+	}
+	if len(grants[0].Rules) != 1 || len(grants[0].Rules[0].ResourceNames) != 1 || grants[0].Rules[0].ResourceNames[0] != "reviewed-canary" {
+		t.Fatal("stored grant lost its exact object names before signed delivery")
 	}
 	if got, want := grants[0].ProxyURL, "https://qwen-kubernetes-qwen-re8ch.pilot.svc.cluster.local:6443"; got != want {
 		t.Fatalf("proxy URL = %q, want %q", got, want)

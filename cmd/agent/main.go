@@ -404,13 +404,16 @@ func grantResourceName(name string) string {
 	return strings.Trim(value, "-")
 }
 func (a *agent) pollGrants(ctx context.Context) error {
-	body, err := a.sendControlResponse(ctx, "grant.poll", map[string]any{})
+	body, err := a.sendControlResponse(ctx, "grant.poll.v2", map[string]any{})
 	if err != nil {
 		return err
 	}
 	var snapshot model.GrantSnapshot
 	if err = json.Unmarshal(body, &snapshot); err != nil {
 		return err
+	}
+	if snapshot.ProtocolVersion != 2 {
+		return errors.New("grant polling requires the resourceNames-aware v2 protocol")
 	}
 	for _, grant := range snapshot.Grants {
 		if err = a.reconcileGrant(ctx, grant); err != nil {
@@ -445,7 +448,7 @@ func (a *agent) reconcileGrant(ctx context.Context, grant model.GrantInstruction
 	}
 	rules := make([]rbacv1.PolicyRule, 0, len(grant.Rules))
 	for _, rule := range grant.Rules {
-		rules = append(rules, rbacv1.PolicyRule{APIGroups: rule.APIGroups, Resources: rule.Resources, Verbs: rule.Verbs})
+		rules = append(rules, rbacv1.PolicyRule{APIGroups: rule.APIGroups, Resources: rule.Resources, Verbs: rule.Verbs, ResourceNames: rule.ResourceNames})
 	}
 	if grant.Scope == "Cluster" {
 		role := &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: name, Labels: labels}, Rules: rules}
@@ -611,6 +614,9 @@ func (a *agent) sendControlResponse(ctx context.Context, messageType string, pay
 	secret, err := a.client.CoreV1().Secrets(a.namespace).Get(ctx, a.secretName, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
+	}
+	if secret.Annotations == nil {
+		secret.Annotations = map[string]string{}
 	}
 	secret.Annotations["peering.re8ch.com/generation"] = strconv.FormatUint(a.sequence, 10)
 	_, err = a.client.CoreV1().Secrets(a.namespace).Update(ctx, secret, metav1.UpdateOptions{})

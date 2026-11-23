@@ -194,13 +194,13 @@ func (s *SovereignServer) controlMessage(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	var grantSnapshot *model.GrantSnapshot
-	if message.Type == "grant.poll" {
+	if message.Type == "grant.poll" || message.Type == "grant.poll.v2" {
 		grants, grantErr := s.Store.PendingGrants(r.Context(), tenant, id, s.now())
 		if grantErr != nil {
 			http.Error(w, "grant state unavailable", 503)
 			return
 		}
-		grantSnapshot = &model.GrantSnapshot{Grants: grants}
+		grantSnapshot = grantSnapshotForVersion(grants, message.Type == "grant.poll.v2")
 	}
 	if message.Type == "grant.fulfilled" {
 		var fulfillment model.GrantFulfillment
