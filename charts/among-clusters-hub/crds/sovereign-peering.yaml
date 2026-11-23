@@ -195,7 +195,7 @@ spec:
                 generation: {type: integer, format: int64, minimum: 1}
                 policyRef: {type: string}
                 catalogServiceRef: {type: string, pattern: '^[a-z0-9][a-z0-9._/-]{2,127}$'}
-                assetRefs: {type: array, uniqueItems: true, items: {type: string, minLength: 1}}
+                assetRefs: {type: array, x-kubernetes-list-type: set, items: {type: string, minLength: 1}}
                 revoked: {type: boolean, default: false}
               x-kubernetes-validations:
                 - {rule: '!has(self.localServiceRef) || !has(self.localServiceRef.namespace)', message: Cross-namespace service references are forbidden; omit namespace for the local namespace}
@@ -234,11 +234,11 @@ spec:
                 kind: {type: string, enum: [ssh-device]}
                 publicKeyFingerprint: {type: string, pattern: '^SHA256:[A-Za-z0-9+/]{20,100}$'}
                 locationRef: {type: string, minLength: 1, maxLength: 253}
-                capabilities: {type: array, uniqueItems: true, items: {type: string, minLength: 1, maxLength: 120}}
+                capabilities: {type: array, x-kubernetes-list-type: set, items: {type: string, minLength: 1, maxLength: 120}}
                 labels: {type: object, additionalProperties: {type: string, maxLength: 120}}
                 catalogServiceRefs:
                   type: array
-                  uniqueItems: true
+                  x-kubernetes-list-type: set
                   items: {type: string, pattern: '^[a-z0-9][a-z0-9._/-]{2,127}$'}
               additionalProperties: false
             status:
@@ -323,6 +323,7 @@ spec:
                     properties:
                       apiGroups: {type: array, items: {type: string}}
                       resources: {type: array, items: {type: string}}
+                      resourceNames: {type: array, items: {type: string, minLength: 1}}
                       verbs: {type: array, items: {type: string, enum: [get, list, watch, create, update, patch, delete, bind, escalate, impersonate, "*"]}}
                 approved: {type: boolean, default: false}
                 revoked: {type: boolean, default: false}
