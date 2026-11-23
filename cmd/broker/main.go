@@ -14,6 +14,7 @@ import (
 	"github.com/re8ch/among-clusters/internal/credential"
 	"github.com/re8ch/among-clusters/internal/model"
 	"github.com/re8ch/among-clusters/internal/protocol"
+	"github.com/re8ch/among-clusters/internal/telemetry"
 	"io"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	authorizationv1 "k8s.io/api/authorization/v1"
@@ -42,15 +43,20 @@ type broker struct {
 }
 
 func main() {
+	diagnostics := telemetry.NewFromEnv("among-broker")
 	cfg, err := rest.InClusterConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
+	cfg.Wrap(func(base http.RoundTripper) http.RoundTripper {
+		return telemetry.Transport(base, "local_kubernetes", "")
+	})
 	client, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
-	b := &broker{client: client, namespace: env("CREDENTIAL_NAMESPACE", "credential-broker"), hub: strings.TrimSuffix(must("HUB_ENDPOINT"), "/"), generations: map[string]uint64{}, http: &http.Client{Timeout: 10 * time.Second}}
+	hubEndpoint := strings.TrimSuffix(must("HUB_ENDPOINT"), "/")
+	b := &broker{client: client, namespace: env("CREDENTIAL_NAMESPACE", "credential-broker"), hub: hubEndpoint, generations: map[string]uint64{}, http: &http.Client{Timeout: 10 * time.Second, Transport: telemetry.Transport(http.DefaultTransport, "hub_request", hubEndpoint)}}
 	if err = b.loadKey(context.Background()); err != nil {
 		log.Fatal(err)
 	}
@@ -60,7 +66,7 @@ func main() {
 	mux.HandleFunc("POST /v1/credentials", b.store)
 	mux.HandleFunc("POST /v1/credentials/revoke", b.revoke)
 	mux.HandleFunc("/k8s/", b.proxy)
-	log.Fatal(http.ListenAndServe(":8080", mux))
+	log.Fatal(http.ListenAndServe(":8080", diagnostics.Handler(mux)))
 }
 func (b *broker) revoke(w http.ResponseWriter, r *http.Request) {
 	var message model.ControlMessage
@@ -127,7 +133,11 @@ func (b *broker) publicKey(w http.ResponseWriter, _ *http.Request) {
 	write(w, 200, map[string]string{"publicKey": base64.RawStdEncoding.EncodeToString(b.private.PublicKey().Bytes())})
 }
 func (b *broker) identity(ctx context.Context, tenant, id string) (model.IdentityRegistration, error) {
-	r, err := b.http.Get(b.hub + "/v1/identities/" + url.PathEscape(tenant) + "/" + url.PathEscape(id))
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, b.hub+"/v1/identities/"+url.PathEscape(tenant)+"/"+url.PathEscape(id), nil)
+	if err != nil {
+		return model.IdentityRegistration{}, err
+	}
+	r, err := b.http.Do(request)
 	if err != nil {
 		return model.IdentityRegistration{}, err
 	}
@@ -137,6 +147,9 @@ func (b *broker) identity(ctx context.Context, tenant, id string) (model.Identit
 		return v, fmt.Errorf("identity lookup returned %s", r.Status)
 	}
 	err = json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&v)
+	if err != nil {
+		telemetry.Failure(ctx, "hub_identity_decode", "invalid_response")
+	}
 	return v, err
 }
 func (b *broker) store(w http.ResponseWriter, r *http.Request) {
@@ -203,18 +216,21 @@ func (b *broker) proxy(w http.ResponseWriter, r *http.Request) {
 	expected := "Bearer credential://among-clusters/" + parts[0] + "/" + parts[1]
 	provided := r.Header.Get("Authorization")
 	if subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) != 1 && !b.authorizeKubernetesUser(r.Context(), strings.TrimPrefix(provided, "Bearer "), parts[0], parts[1]) {
+		telemetry.Failure(r.Context(), "grant_authorization", "denied")
 		http.Error(w, "opaque credential reference required", http.StatusUnauthorized)
 		return
 	}
 	name := resourceName(parts[0] + "-" + parts[1])
 	secret, err := b.client.CoreV1().Secrets(b.namespace).Get(r.Context(), name, metav1.GetOptions{})
 	if err != nil {
+		telemetry.Failure(r.Context(), "credential_read", "unavailable")
 		http.Error(w, "credential unavailable", 403)
 		return
 	}
 	var envelope credential.Envelope
 	var payload model.CredentialPayload
 	if json.Unmarshal(secret.Data["envelope.json"], &envelope) != nil || credential.Decrypt(b.private.Bytes(), envelope, &payload) != nil || !time.Now().Before(payload.ExpiresAt) {
+		telemetry.Failure(r.Context(), "credential_decode", "invalid_or_expired")
 		http.Error(w, "credential expired", 403)
 		return
 	}
@@ -226,7 +242,11 @@ func (b *broker) proxy(w http.ResponseWriter, r *http.Request) {
 	roots := x509.NewCertPool()
 	roots.AppendCertsFromPEM([]byte(payload.CertificateAuthority))
 	proxy := httputil.NewSingleHostReverseProxy(target)
-	proxy.Transport = &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: payload.TLSServerName, MinVersion: tls.VersionTLS12}}
+	proxy.Transport = telemetry.Transport(&http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: payload.TLSServerName, MinVersion: tls.VersionTLS12}}, "remote_kubernetes", "")
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, _ error) {
+		telemetry.Failure(r.Context(), "remote_proxy", "transport")
+		http.Error(w, "Bad Gateway", http.StatusBadGateway)
+	}
 	original := proxy.Director
 	proxy.Director = func(req *http.Request) {
 		original(req)

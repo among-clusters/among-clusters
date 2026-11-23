@@ -9,6 +9,7 @@
     "managedAccess":{"type":"object","required":["enabled"],"properties":{"enabled":{"type":"boolean"}}},
     "migration":{"type":"object","required":["replaceCollaborationCRDs"],"properties":{"replaceCollaborationCRDs":{"type":"boolean"}}},
     "publication":{"type":"object","properties":{"bootstrapTarget":{"type":"string"},"selectedEdge":{"type":"string"}},"additionalProperties":false},
-    "ciliumPolicy":{"type":"object","properties":{"enabled":{"type":"boolean"}},"additionalProperties":false}
+    "ciliumPolicy":{"type":"object","properties":{"enabled":{"type":"boolean"}},"additionalProperties":false},
+    "sentry":{"type":"object","additionalProperties":false,"required":["enabled","dsnSecretRef","release","environment"],"properties":{"enabled":{"type":"boolean"},"dsn":{"type":"string"},"dsnSecretRef":{"type":"object","additionalProperties":false,"required":["name","key"],"properties":{"name":{"type":"string"},"key":{"type":"string","minLength":1}}},"release":{"type":"string"},"environment":{"type":"string"}}}
   },"additionalProperties":true
 }
