@@ -26,3 +26,11 @@ ciliumPolicy:
 resources:
   requests: {cpu: 50m, memory: 64Mi}
   limits: {cpu: 500m, memory: 256Mi}
+# Optional HTTP diagnostics. Public DSN or an existing Secret reference, not both.
+# No release-automation token belongs in runtime.
+sentry:
+  enabled: false
+  dsn: ""
+  dsnSecretRef: {name: "", key: dsn}
+  release: ""
+  environment: ""

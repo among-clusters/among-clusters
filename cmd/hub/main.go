@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/re8ch/among-clusters/internal/telemetry"
 	"log"
 	"net/http"
 	"os"
@@ -14,10 +15,14 @@ import (
 )
 
 func main() {
+	diagnostics := telemetry.NewFromEnv("among-hub")
 	cfg, err := rest.InClusterConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
+	cfg.Wrap(func(base http.RoundTripper) http.RoundTripper {
+		return telemetry.Transport(base, "local_kubernetes", "")
+	})
 	client, err := dynamic.NewForConfig(cfg)
 	if err != nil {
 		log.Fatal(err)
@@ -39,5 +44,5 @@ func main() {
 	}
 	go (&api.SovereignReconciler{Client: client, Core: core, ManagedAccessEnabled: api.ManagedAccessFromEnv(), Interval: interval}).Run(context.Background())
 	log.Printf("AmongClusters hub listening on %s", address)
-	log.Fatal(http.ListenAndServe(address, server.Handler()))
+	log.Fatal(http.ListenAndServe(address, diagnostics.Handler(server.Handler())))
 }
