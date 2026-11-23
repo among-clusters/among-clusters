@@ -547,7 +547,11 @@ func (s *KubernetesSovereignStore) PendingGrants(ctx context.Context, tenant, is
 			if !ok {
 				continue
 			}
-			rules = append(rules, model.AccessRule{APIGroups: stringSlice(m, "apiGroups"), Resources: stringSlice(m, "resources"), Verbs: stringSlice(m, "verbs"), ResourceNames: stringSlice(m, "resourceNames")})
+			names, _, namesErr := unstructured.NestedStringSlice(m, "resourceNames")
+			if namesErr != nil {
+				return nil, errors.New("approved grant resourceNames cannot be decoded without losing scope")
+			}
+			rules = append(rules, model.AccessRule{APIGroups: stringSlice(m, "apiGroups"), Resources: stringSlice(m, "resources"), Verbs: stringSlice(m, "verbs"), ResourceNames: names})
 		}
 		result = append(result, model.GrantInstruction{Name: o.GetName(), Tenant: tenant, PeerRef: peerRef, AdvertisementRef: adRef, Generation: o.GetGeneration(), Scope: scope, Namespaces: namespaces, Rules: rules, ExpiresAt: expires, Revoked: revoked, ProxyURL: "https://" + adRef + "-" + peerRef + "." + tenant + ".svc.cluster.local:6443"})
 	}

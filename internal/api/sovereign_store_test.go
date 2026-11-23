@@ -147,4 +147,13 @@ func TestPendingGrantCarriesExplicitClusterScope(t *testing.T) {
 	if got, want := grants[0].ProxyURL, "https://qwen-kubernetes-qwen-re8ch.pilot.svc.cluster.local:6443"; got != want {
 		t.Fatalf("proxy URL = %q, want %q", got, want)
 	}
+	// Even malformed migration/cache input cannot silently become an unscoped
+	// instruction before it reaches protocol negotiation or native RBAC.
+	grant.Object["spec"].(map[string]any)["rules"].([]any)[0].(map[string]any)["resourceNames"] = []any{int64(7)}
+	if _, err := client.Resource(grantsGVR).Namespace("pilot").Update(context.Background(), grant, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if grants, err := store.PendingGrants(context.Background(), "pilot", "qwen", now); err == nil || len(grants) != 0 {
+		t.Fatal("invalid stored resourceNames were dropped into an unrestricted rule")
+	}
 }
