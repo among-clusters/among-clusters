@@ -143,7 +143,7 @@ type writer struct {
 
 func (w *writer) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 func (w *writer) WriteHeader(code int) {
-	if code >= 100 && code < 200 {
+	if code >= 100 && code < 200 && code != http.StatusSwitchingProtocols {
 		w.ResponseWriter.WriteHeader(code)
 		return
 	}
