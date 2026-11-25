@@ -128,7 +128,13 @@ spec:
   type: {{ .Values.gateway.service.type }}
   selector: {app.kubernetes.io/name: among-clusters-gateway}
   ports:
-    - {name: gateway, port: {{ .Values.gateway.listener.port }}, targetPort: gateway, protocol: UDP}
+    - name: gateway
+      port: {{ .Values.gateway.listener.port }}
+      targetPort: gateway
+      protocol: UDP
+      {{- if gt (int .Values.gateway.service.nodePort) 0 }}
+      nodePort: {{ .Values.gateway.service.nodePort }}
+      {{- end }}
     {{- range .Values.gateway.imports }}
     - {name: {{ .name }}, port: {{ .port }}, targetPort: {{ .name }}, protocol: TCP}
     {{- end }}

@@ -33,6 +33,7 @@ gateway:
     hostPort: 0
   service:
     type: ClusterIP
+    nodePort: 0
   exports: []
   imports: []
   # BYOC clusters normally dial the provider-owned public authority and keep
