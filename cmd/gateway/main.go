@@ -30,9 +30,21 @@ type importRoute struct {
 	SessionOnly      bool   `json:"sessionOnly"`
 }
 type peerSession struct {
-	Endpoint         string `json:"endpoint"`
-	ExpectedSPIFFEID string `json:"expectedSPIFFEID"`
+	Endpoint         string   `json:"endpoint"`
+	Endpoints        []string `json:"endpoints,omitempty"`
+	ExpectedSPIFFEID string   `json:"expectedSPIFFEID"`
 }
+
+func (s peerSession) candidates() []string {
+	if len(s.Endpoints) > 0 {
+		return s.Endpoints
+	}
+	if s.Endpoint != "" {
+		return []string{s.Endpoint}
+	}
+	return nil
+}
+
 type sessionRegistry struct {
 	mu       sync.RWMutex
 	sessions map[string][]*quic.Conn
@@ -134,7 +146,7 @@ func main() {
 		go serveQUIC(ctx, cert, roots, routes, peerIdentities, registry)
 	}
 	for _, session := range sessions {
-		if session.Endpoint == "" || session.ExpectedSPIFFEID == "" {
+		if len(session.candidates()) == 0 || session.ExpectedSPIFFEID == "" {
 			log.Fatal("peer session requires endpoint and expectedSPIFFEID")
 		}
 		session := session
@@ -287,19 +299,25 @@ func maintainConnectionHeartbeat(ctx context.Context, connection *quic.Conn) {
 
 func maintainSession(ctx context.Context, cert tls.Certificate, roots *x509.CertPool, routes map[string]exportRoute, peerIdentities map[string][]string, registry *sessionRegistry, session peerSession) {
 	backoff := 3 * time.Second
+	candidates := session.candidates()
+	next := 0
 	for ctx.Err() == nil {
 		started := time.Now()
-		connection, err := quic.DialAddr(ctx, strings.TrimPrefix(session.Endpoint, "quic://"), tlsConfig(cert, roots, session.ExpectedSPIFFEID, false), sessionQUICConfig(true))
+		endpoint := candidates[next]
+		connection, err := quic.DialAddr(ctx, strings.TrimPrefix(endpoint, "quic://"), tlsConfig(cert, roots, session.ExpectedSPIFFEID, false), sessionQUICConfig(true))
 		if err != nil {
-			log.Printf("peer session %s: %v", session.ExpectedSPIFFEID, err)
+			log.Printf("peer session %s via %s: %v", session.ExpectedSPIFFEID, endpoint, err)
+			next = (next + 1) % len(candidates)
 			if !waitForRetry(ctx, backoff) {
 				return
 			}
 			backoff = nextBackoff(backoff)
 			continue
 		}
+		log.Printf("peer session %s selected endpoint %s", session.ExpectedSPIFFEID, endpoint)
 		handleConnection(ctx, connection, session.ExpectedSPIFFEID, routes, peerIdentities, registry, true)
 		connection.CloseWithError(0, "reconnecting")
+		next = (next + 1) % len(candidates)
 		if time.Since(started) >= 2*time.Minute {
 			backoff = 3 * time.Second
 		}

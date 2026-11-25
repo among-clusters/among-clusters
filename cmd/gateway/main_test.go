@@ -25,6 +25,24 @@ func TestSessionRetryBackoffIsBounded(t *testing.T) {
 	}
 }
 
+func TestPeerSessionCandidatesPreserveCompatibilityAndOrder(t *testing.T) {
+	legacy := peerSession{Endpoint: "r640:8443"}
+	if got := legacy.candidates(); len(got) != 1 || got[0] != "r640:8443" {
+		t.Fatalf("legacy candidates = %#v", got)
+	}
+	regional := peerSession{
+		Endpoint:  "ignored-legacy:8443",
+		Endpoints: []string{"la1:8443", "la2:8443", "r640:8443"},
+	}
+	got := regional.candidates()
+	if len(got) != 3 || got[0] != "la1:8443" || got[1] != "la2:8443" || got[2] != "r640:8443" {
+		t.Fatalf("ordered candidates = %#v", got)
+	}
+	if got := (peerSession{}).candidates(); got != nil {
+		t.Fatalf("empty candidates = %#v", got)
+	}
+}
+
 func TestSessionQUICConfigSupportsPublicEdgeFanout(t *testing.T) {
 	for _, dial := range []bool{false, true} {
 		config := sessionQUICConfig(dial)
